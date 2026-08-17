@@ -7,19 +7,10 @@
 // and killed on the walk back to a desk. The queue holds confirmations, which
 // are small and are not history.
 
-import { parsePositions, parseReconciliation, parseRoster } from './parse.js';
-import type { Reconciliation } from './parse.js';
+import { parsePositions, parseRoster } from './parse.js';
 import type { Position, RosterEntry } from '../core/types.js';
 import type { Sheet } from '../core/sheet.js';
 import type { ShelfResult } from '../core/walk.js';
-
-// What the auditor concluded about an asset nobody found. "Missed it" and
-// "here but I could not read the note" are navigation, not conclusions: they
-// send the auditor back to look, and what they find arrives as one of these.
-export interface Decision {
-  readonly asset: string;
-  readonly decision: 'found' | 'removed';
-}
 
 const QUEUE_KEY = 'assetwalk.outbox';
 
@@ -59,15 +50,6 @@ export async function fetchHistory(backend: Backend, location: string): Promise<
   return parsePositions(await get(backend, `/locations/${encodeURIComponent(location)}/history`));
 }
 
-export async function fetchReconciliation(
-  backend: Backend,
-  walk: string,
-): Promise<Reconciliation> {
-  return parseReconciliation(
-    await get(backend, `/walks/${encodeURIComponent(walk)}/reconciliation`),
-  );
-}
-
 // Called on shelf completion, immediately before the caller drops the history
 // slice. The idempotency key is minted once and stored with the entry so a
 // retry after an ambiguous timeout cannot double-apply the shelf.
@@ -97,10 +79,6 @@ export function queueSheets(location: string, sheets: readonly Sheet[]): void {
       members: sheet.members,
     })),
   );
-}
-
-export function queueDecisions(walk: string, decisions: readonly Decision[]): void {
-  enqueue(`/walks/${encodeURIComponent(walk)}/reconciliation`, decisions);
 }
 
 function enqueue(path: string, body: unknown): void {

@@ -9,7 +9,7 @@ import test from 'node:test';
 
 import { assetTag, locationID, walkID } from '../core/types.js';
 import type { AssetTag, LocationID, Position, WalkID } from '../core/types.js';
-import { RECENT, begin, recentOf, reduce, result, windowOf } from '../core/walk.js';
+import { begin, reduce, result, windowOf } from '../core/walk.js';
 import type { ShelfResult, State } from '../core/walk.js';
 
 function must<T extends string>(value: T | null): T {
@@ -28,9 +28,9 @@ function shelfOf(tags: readonly AssetTag[]): Position[] {
   return tags.map((asset, sequence) => ({ location: BAY, sequence, asset }));
 }
 
-// A perfect auditor: sees the devices in their real physical order, taps
-// whatever is on screen, and types a tag only when nothing on screen matches.
-// Counts its own interactions so tests can assert on effort, not just outcome.
+// A perfect auditor: sees the devices in their real physical order, taps one of
+// the three on screen when it is there, and types the tag from the note when it
+// is not. Counts typed tags so tests can assert on effort, not just outcome.
 function walkShelf(
   history: readonly Position[],
   roster: ReadonlySet<AssetTag>,
@@ -40,15 +40,9 @@ function walkShelf(
   let typed = 0;
 
   for (const asset of shelf) {
-    const ahead = windowOf(state).findIndex((position) => position.asset === asset);
-    if (ahead !== -1) {
-      state = reduce(state, { kind: 'CONFIRM', index: state.cursor + ahead });
-      continue;
-    }
-    const passed = recentOf(state);
-    const behind = passed.findIndex((position) => position.asset === asset);
-    if (behind !== -1) {
-      state = reduce(state, { kind: 'CONFIRM', index: state.cursor - passed.length + behind });
+    const offset = windowOf(state).findIndex((position) => position.asset === asset);
+    if (offset !== -1) {
+      state = reduce(state, { kind: 'CONFIRM', offset });
       continue;
     }
     typed += 1;
@@ -76,7 +70,7 @@ test('reproduces the reference implementation on its own example', () => {
 test('a run of removals costs one interaction, not one per device', () => {
   const history = shelfOf([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(tag));
   const roster = new Set(history.map((position) => position.asset));
-  // Six consecutive devices gone — far past the four-entry window, which is
+  // Six consecutive devices gone — far past the three-entry window, which is
   // the case that made every earlier design ask the auditor a question.
   const shelf = [tag(1), tag(8), tag(9), tag(10)];
 
@@ -88,27 +82,30 @@ test('a run of removals costs one interaction, not one per device', () => {
   assert.deepEqual([...outcome.newDevices], []);
 });
 
-test('an adjacent swap is resolved by tapping, without typing a tag', () => {
+test('an adjacent swap costs one typed tag and nothing else', () => {
   const history = shelfOf([1, 2, 3, 4].map(tag));
   const roster = new Set(history.map((position) => position.asset));
 
+  // Device 2 is met first, which drops device 1 into the pile. Naming device 1
+  // pulls it straight back out at step 1 of the lookup: a swap resolves to a
+  // swap, never to a removal plus an arrival.
   const { outcome, typed } = walkShelf(history, roster, [tag(2), tag(1), tag(3), tag(4)]);
 
-  assert.equal(typed, 0);
+  assert.equal(typed, 1);
   assert.deepEqual([...outcome.confirmed], [tag(2), tag(1), tag(3), tag(4)]);
   assert.deepEqual([...outcome.unresolved], []);
+  assert.deepEqual([...outcome.newDevices], []);
 });
 
-test('a device moved beyond the recent strip still resolves from the pile', () => {
+test('a device moved to the far end of the shelf resolves from the pile', () => {
   const history = shelfOf([1, 2, 3, 4, 5, 6, 7, 8].map(tag));
   const roster = new Set(history.map((position) => position.asset));
-  // Device 1 has moved to the bottom, well past the RECENT entries kept on
-  // screen, so the auditor has to name it. Step 1 of the lookup finds it.
+  // Device 1 has moved to the bottom, so it is long gone from the window by
+  // the time the auditor reaches it. Step 1 of the lookup finds it in the pile.
   const shelf = [2, 3, 4, 5, 6, 7, 8, 1].map(tag);
 
   const { outcome, typed } = walkShelf(history, roster, shelf);
 
-  assert.ok(RECENT < 7);
   assert.equal(typed, 1);
   assert.deepEqual([...outcome.confirmed], shelf);
   assert.deepEqual([...outcome.unresolved], []);
@@ -123,26 +120,6 @@ test('an asset from another shelf is confirmed, not recorded as new', () => {
   assert.deepEqual([...outcome.newDevices], []);
   assert.ok(outcome.confirmed.includes(tag(99)));
   assert.deepEqual([...outcome.unresolved], []);
-});
-
-test('undo restores the state before the last event', () => {
-  const history = shelfOf([1, 2, 3, 4, 5, 6].map(tag));
-  const roster = new Set(history.map((position) => position.asset));
-  let state = begin(WALK, BAY, history, roster);
-
-  // Confirm the fifth entry: four entries sweep into the pile in one move.
-  state = reduce(state, { kind: 'CONFIRM', index: 4 });
-  assert.equal(state.pile.size, 4);
-
-  state = reduce(state, { kind: 'UNDO' });
-  assert.equal(state.pile.size, 0);
-  assert.equal(state.cursor, 0);
-  assert.equal(state.confirmed.size, 0);
-});
-
-test('undo at the start of a walk is a no-op', () => {
-  const state = begin(WALK, BAY, shelfOf([1, 2].map(tag)), new Set());
-  assert.equal(reduce(state, { kind: 'UNDO' }), state);
 });
 
 test('unreadable devices are counted without inventing a tag', () => {
@@ -264,29 +241,3 @@ test('a perfect auditor reconstructs exactly the mutation that was applied', () 
   }
 });
 
-test('undo unwinds any walk back to its starting state', () => {
-  for (let seed = 1; seed <= 100; seed++) {
-    const random = rng(seed);
-    const history = Array.from({ length: 5 + Math.floor(random() * 20) }, (_, i) => tag(i + 1));
-    const { shelf } = mutate(random, history);
-    const roster = new Set(history);
-    const start = begin(WALK, BAY, shelfOf(history), roster);
-
-    let state = start;
-    let events = 0;
-    for (const asset of shelf) {
-      const ahead = windowOf(state).findIndex((position) => position.asset === asset);
-      state =
-        ahead !== -1
-          ? reduce(state, { kind: 'CONFIRM', index: state.cursor + ahead })
-          : reduce(state, { kind: 'IDENTIFY', tag: asset });
-      events += 1;
-    }
-    for (let i = 0; i < events; i++) state = reduce(state, { kind: 'UNDO' });
-
-    assert.equal(state.cursor, 0, `seed ${seed}`);
-    assert.equal(state.pile.size, 0, `seed ${seed}`);
-    assert.equal(state.confirmed.size, 0, `seed ${seed}`);
-    assert.deepEqual(state.newDevices, [], `seed ${seed}`);
-  }
-});

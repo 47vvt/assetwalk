@@ -44,15 +44,6 @@ CREATE TABLE IF NOT EXISTS shelf_result (
     unreadable INTEGER NOT NULL,
     PRIMARY KEY (walk, location)
 );
--- The auditor's answers on the reconciliation screen. Kept separate from
--- shelf_result because they are a different kind of statement: a shelf result
--- is what a walk observed, a decision is what a human concluded afterwards.
-CREATE TABLE IF NOT EXISTS reconciliation_decision (
-    walk TEXT NOT NULL,
-    asset TEXT NOT NULL,
-    decision TEXT NOT NULL CHECK (decision IN ('found', 'removed')),
-    PRIMARY KEY (walk, asset)
-);
 CREATE TABLE IF NOT EXISTS applied_key (
     key TEXT PRIMARY KEY
 );
@@ -139,45 +130,6 @@ class SqlStore:
             )
             for walk, location, confirmed, unresolved, new_devices, unreadable in rows
         ]
-
-    def resolve(self, walk_id: str, found: list[str], removed: list[str]) -> None:
-        with self.db:
-            self.db.executemany(
-                "INSERT OR REPLACE INTO reconciliation_decision (walk, asset, decision) "
-                "VALUES (?, ?, ?)",
-                [(walk_id, asset, "found") for asset in found]
-                + [(walk_id, asset, "removed") for asset in removed],
-            )
-        # A device found after all belongs back in its shelf's history. The
-        # walk that missed it dropped it from `position`, so the shelf it was
-        # expected on is recovered from that walk's unresolved list — and it
-        # goes on the end, because nobody ever established where in the run it
-        # actually sat and inventing a sequence would be a fact no walk saw.
-        expected_at = {
-            asset: shelf.location
-            for shelf in self.shelves(walk_id)
-            for asset in shelf.unresolved
-        }
-        with self.db:
-            for asset in found:
-                place = expected_at.get(asset)
-                if place is None:
-                    continue
-                (next_sequence,) = self.db.execute(
-                    "SELECT COALESCE(MAX(sequence), -1) + 1 FROM position WHERE location = ?",
-                    (place,),
-                ).fetchone()
-                self.db.execute(
-                    "INSERT OR REPLACE INTO position (location, sequence, asset) VALUES (?, ?, ?)",
-                    (place, next_sequence, asset),
-                )
-
-    def decisions(self, walk_id: str) -> dict[str, str]:
-        rows = self.db.execute(
-            "SELECT asset, decision FROM reconciliation_decision WHERE walk = ? ORDER BY asset",
-            (walk_id,),
-        )
-        return dict(rows)
 
     def record_sheets(self, sheets: list[Sheet]) -> None:
         with self.db:

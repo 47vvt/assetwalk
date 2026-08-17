@@ -11,7 +11,6 @@ import {
   parseConfig,
   parseInstanceURL,
   parsePositions,
-  parseReconciliation,
   parseRoster,
 } from '../io/parse.js';
 
@@ -50,17 +49,6 @@ test('a malformed asset tag never reaches the reducer', () => {
   assert.throws(() => parseRoster([{ asset: 'UOM12', location: null }]));
   assert.throws(() => parseRoster([{ asset: "'; DROP TABLE --", location: null }]));
   assert.equal(parseRoster([{ asset: 'UOM270313', location: null }])[0]?.location, null);
-});
-
-test('reconciliation parses only the candidates the auditor must decide', () => {
-  const parsed = parseReconciliation({
-    relocated: [{ asset: 'UOM111111', expected_at: 'BAY-A', found_at: 'BAY-C' }],
-    candidates: [{ asset: 'UOM222222', location: 'BAY-A' }],
-    new_devices: ['UOM333333'],
-    unreadable: 2,
-  });
-  assert.deepEqual(parsed.candidates, [{ asset: 'UOM222222', location: 'BAY-A' }]);
-  assert.equal(parsed.unreadable, 2);
 });
 
 test('a standalone config asks for no sign-in', () => {

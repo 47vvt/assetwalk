@@ -5,7 +5,7 @@
 // last walk. Two primitives are enough to cover every mutation:
 //
 //   tap a window entry   → confirm it; anything stepped over falls to the pile
-//   "not in list"        → identify the device, then a four-step lookup
+//   type the tag         → identify the device, then a four-step lookup
 //
 // The invariant that collapses every earlier heuristic: a window miss is not a
 // decision point. A brand-new device and a device sitting further down history
@@ -14,20 +14,18 @@
 
 import type { AssetTag, LocationID, Position, WalkID } from './types.js';
 
-// Four entries is what an auditor can hold in view and compare against the
-// notes in front of them without losing their place on the shelf.
-export const WINDOW = 4;
-
-// Two already-passed entries stay on screen above the cursor. An adjacent swap
-// is the most common mutation between walks, and showing the entry just
-// stepped over resolves it with a tap instead of a typed tag.
-export const RECENT = 2;
+// Three entries is what an auditor can hold in view and check against the note
+// in front of them in one glance, without scanning a list or losing their
+// place on the shelf.
+export const WINDOW = 3;
 
 export type Event =
-  | { kind: 'CONFIRM'; index: number }
+  // `offset` is into the window, not into history. That is what makes
+  // confirming an entry the auditor has already walked past unrepresentable,
+  // rather than something the reducer has to guard against at runtime.
+  | { kind: 'CONFIRM'; offset: number }
   | { kind: 'IDENTIFY'; tag: AssetTag }
-  | { kind: 'UNREADABLE' }
-  | { kind: 'UNDO' };
+  | { kind: 'UNREADABLE' };
 
 export interface State {
   readonly walk: WalkID;
@@ -44,13 +42,9 @@ export interface State {
   readonly newDevices: readonly AssetTag[];
   // Devices seen whose note could not be read. A count, not a set: at the
   // moment of the event nobody knows which entry it was, and guessing would
-  // put a fabricated tag into the record. Reconciliation uses it to say "N of
-  // these unresolved tags are physically present" (§9).
+  // put a fabricated tag into the record. It travels to the variance report as
+  // "expect this many of these to be physically present".
   readonly unreadable: number;
-  // Undo is a pointer to the state before the last event. States are immutable
-  // and structurally shared, and a shelf is ~40 entries, so keeping the whole
-  // chain costs less than reasoning about inverse operations would.
-  readonly previous: State | null;
 }
 
 export interface ShelfResult {
@@ -78,7 +72,6 @@ export function begin(
     confirmed: new Map(),
     newDevices: [],
     unreadable: 0,
-    previous: null,
   };
 }
 
@@ -89,26 +82,16 @@ export function windowOf(state: State): readonly Position[] {
   return state.history.slice(state.cursor, state.cursor + WINDOW);
 }
 
-// Entries the auditor has already stepped over, nearest first. Tapping one is
-// an ordinary CONFIRM: below the cursor an unconfirmed entry is in the pile,
-// and restoring it from the pile is the same act as confirming it.
-export function recentOf(state: State): readonly Position[] {
-  return state.history.slice(Math.max(0, state.cursor - RECENT), state.cursor);
-}
-
 export function reduce(state: State, event: Event): State {
   switch (event.kind) {
     case 'CONFIRM':
-      return confirmAt(state, event.index);
+      return confirmAhead(state, event.offset);
 
     case 'IDENTIFY':
       return identify(state, event.tag);
 
     case 'UNREADABLE':
-      return { ...state, unreadable: state.unreadable + 1, previous: state };
-
-    case 'UNDO':
-      return state.previous ?? state;
+      return { ...state, unreadable: state.unreadable + 1 };
 
     default: {
       const _never: never = event;
@@ -117,38 +100,28 @@ export function reduce(state: State, event: Event): State {
   }
 }
 
-// `index` is an index into `history`, not into the window — the window is
-// derived, and the UI maps a tap back to the entry it rendered.
-function confirmAt(state: State, index: number): State {
+function confirmAhead(state: State, offset: number): State {
+  const index = state.cursor + offset;
   const position = state.history[index];
-  // noUncheckedIndexedAccess makes the bound explicit. The UI only ever emits
-  // an index it has rendered, so this is unreachable in the app; it is here
-  // because the type of `history[index]` says it must be.
+  // noUncheckedIndexedAccess makes the bound explicit, and the same check
+  // covers a negative offset. The UI only ever emits an offset it rendered, so
+  // this is unreachable in the app; it is here because the type says it must be.
   if (position === undefined) return state;
-
-  const pile = new Map(state.pile);
-
-  if (index < state.cursor) {
-    // Already stepped over: an adjacent swap, or a device moved within this
-    // shelf. Take it back out of the pile. The cursor does not move — the
-    // auditor is still working forward from where they were.
-    pile.delete(position.asset);
-    return confirmed(state, position.asset, pile, state.cursor);
-  }
 
   // Everything between the cursor and the tapped entry was stepped over. It is
   // unresolved, not removed: that call is made audit-wide at the end of the
   // walk, because a tag unresolved on this shelf is often confirmed on
   // another. Sweeping the whole run in one move is what makes a run of
   // removals cost one interaction instead of one per device.
+  const pile = new Map(state.pile);
   for (const skipped of state.history.slice(state.cursor, index)) {
     pile.set(skipped.asset, skipped);
   }
   return confirmed(state, position.asset, pile, index + 1);
 }
 
-// The four-step lookup. Order matters: resolving step 1 as step 4 invents a
-// phantom removal *and* a phantom new device out of a single tap.
+// The four-step lookup. Order matters: resolving a step 1 as a step 4 invents a
+// phantom removal *and* a phantom new device out of a single entry.
 function identify(state: State, tag: AssetTag): State {
   // 1. In the pile → the device moved within this shelf. Restore and confirm.
   if (state.pile.has(tag)) {
@@ -163,7 +136,7 @@ function identify(state: State, tag: AssetTag): State {
   const found = state.history.findIndex(
     (position, i) => i >= state.cursor && position.asset === tag,
   );
-  if (found !== -1) return confirmAt(state, found);
+  if (found !== -1) return confirmAhead(state, found - state.cursor);
 
   // 3. On the audit roster → a real asset relocated from another shelf. It is
   //    recorded as an ordinary confirmation: "found" is the whole fact, and
@@ -187,7 +160,7 @@ function confirmed(
   // Re-confirming is a no-op rather than a reordering: an auditor who types a
   // tag they already scanned should not shuffle the new shelf order.
   if (!map.has(tag)) map.set(tag, map.size);
-  return { ...state, pile, cursor, confirmed: map, previous: state };
+  return { ...state, pile, cursor, confirmed: map };
 }
 
 // Sent to the server on shelf completion, immediately before the history slice

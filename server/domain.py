@@ -83,15 +83,3 @@ class Reconciliation(BaseModel):
     new_devices: list[Tag] = Field(default_factory=list)
     unreadable: int = 0
 
-
-class Decision(BaseModel):
-    """An auditor's final answer on the reconciliation screen.
-
-    Only two outcomes reach the server. "Missed it" sends the auditor back to
-    the shelf and "here but I could not read the note" sends them to scan it —
-    both are navigation, and whatever they conclude afterwards arrives as one
-    of these two.
-    """
-
-    asset: Tag
-    decision: Annotated[str, Field(pattern="^(found|removed)$")]

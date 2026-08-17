@@ -9,25 +9,13 @@ import { begin, reduce, result } from './core/walk.js';
 import type { Event, State } from './core/walk.js';
 import { parseConfig, parseWalkID } from './io/parse.js';
 import { oauthFrom, signIn } from './io/auth.js';
-import {
-  drain,
-  fetchHistory,
-  fetchReconciliation,
-  fetchRoster,
-  pendingCount,
-  queueDecisions,
-  queueSheets,
-  queueShelf,
-} from './io/server.js';
-import type { Backend, Decision } from './io/server.js';
+import { drain, fetchHistory, fetchRoster, pendingCount, queueSheets, queueShelf } from './io/server.js';
+import type { Backend } from './io/server.js';
 import { confirmScan, rejectScan } from './platform/haptics.js';
 import { openCamera, scanningAvailable } from './platform/scanner.js';
 import type { Camera } from './platform/scanner.js';
 import { DEMO_HISTORY, DEMO_LOCATION, DEMO_ROSTER, DEMO_WALK } from './demo-shelf.js';
 import { button, el, replace } from './ui/dom.js';
-import { renderIdentify } from './ui/identify-view.js';
-import { renderReconcile } from './ui/reconcile-view.js';
-import type { Decision as ReconcileDecision } from './ui/reconcile-view.js';
 import { renderSheets } from './ui/sheets-view.js';
 import { renderWalk } from './ui/walk-view.js';
 
@@ -126,18 +114,9 @@ function render(): void {
   if (state === null) return;
   renderWalk(host, state, misses, pendingCount(), {
     dispatch,
-    identify: openIdentify,
     scan: () =>
       void openScanner('Scan to re-anchor', (tag) => dispatch({ kind: 'IDENTIFY', tag }), render),
     finish: () => void finish(),
-  });
-}
-
-function openIdentify(): void {
-  if (state === null) return;
-  renderIdentify(host, state, {
-    choose: (tag) => dispatch({ kind: 'IDENTIFY', tag }),
-    cancel: render,
   });
 }
 
@@ -159,7 +138,7 @@ async function openScanner(
     replace(
       host,
       el('header', {}, el('h1', {}, 'Scanning unavailable')),
-      el('p', {}, 'This browser has no barcode reader. Use “Not in list” to type the tag.'),
+      el('p', {}, 'This browser has no barcode reader. Type the tag from the note instead.'),
       button('Back', back, 'primary'),
     );
     return;
@@ -241,10 +220,14 @@ function complete(walk: WalkID, location: LocationID, walked: readonly AssetTag[
         ? `${walked.length} devices confirmed. Standalone demo — nothing was sent anywhere.`
         : `${walked.length} devices confirmed and queued.`,
     ),
+    // What could not be accounted for is deliberately not shown and not asked
+    // about. Whether a tag is a removal depends on every other shelf in the
+    // audit, which this device does not have and is not going to be given —
+    // the variance report is produced once the whole walk is in.
+    el('p', { class: 'empty' }, 'Anything unaccounted for is settled audit-wide, after every shelf is in.'),
     // A horizontal stack is walked with the same reducer; all that differs is
     // what happens at the end, because Algorithm 2's mechanism is the paper.
-    button('Print QR sheets for this stack', () => offerSheets(walk, location, walked), 'primary'),
-    backend === null ? '' : button('Reconcile this walk', () => void openReconcile(walk), 'finish'),
+    button('Print QR sheets for this stack', () => offerSheets(walk, location, walked), 'primary wide'),
   );
 }
 
@@ -254,83 +237,6 @@ function offerSheets(walk: WalkID, location: LocationID, walked: readonly AssetT
     sync();
     complete(walk, location, walked);
   });
-}
-
-// Runs only once every shelf has reached the server: the whole point of
-// deciding removals audit-wide is that no single shelf can make the call.
-async function openReconcile(walk: WalkID): Promise<void> {
-  if (backend === null) return;
-  if (pendingCount() > 0) {
-    replace(
-      host,
-      el('header', {}, el('h1', {}, 'Not yet')),
-      el(
-        'p',
-        {},
-        `${pendingCount()} shelves are still queued. Reconciliation needs every shelf, ` +
-          'or a device that simply has not been walked yet looks like a removal.',
-      ),
-      button('Back', () => window.location.reload(), 'primary'),
-    );
-    return;
-  }
-
-  const { candidates, unreadable } = await fetchReconciliation(backend, walk);
-  const decisions = new Map<AssetTag, Decision['decision']>();
-  // What the auditor has answered so far, including the two answers that are
-  // not conclusions, so the screen can show every tap as recorded.
-  const answered = new Map<AssetTag, ReconcileDecision>();
-
-  const show = (): void =>
-    renderReconcile(host, candidates, unreadable, answered, {
-      decide: (asset, decision) => {
-        answered.set(asset, decision);
-        if (decision === 'removed') {
-          decisions.set(asset, 'removed');
-          show();
-          return;
-        }
-        // The other two answers are not conclusions, they are ways of going
-        // back to look again — so neither records anything by itself.
-        decisions.delete(asset);
-        if (decision === 'recheck') {
-          // Re-walk the shelf it was expected on. The second look supersedes
-          // the first, and the queued confirmations survive the reload.
-          const at = candidates.find((c) => c.asset === asset)?.location;
-          if (at !== undefined) {
-            window.location.search = `?walk=${encodeURIComponent(walk)}&location=${encodeURIComponent(at)}`;
-          }
-          return;
-        }
-        // Present but unreadable: pull the device and scan the barcode
-        // underneath. A scan is the only thing that turns "I think it is here"
-        // into a fact, so nothing is recorded until one succeeds.
-        void openScanner(
-          `Scan ${asset}`,
-          (scanned) => {
-            if (scanned === asset) decisions.set(asset, 'found');
-            else rejectScan();
-            show();
-          },
-          show,
-        );
-      },
-      done: () => {
-        queueDecisions(
-          walk,
-          [...decisions].map(([asset, decision]) => ({ asset, decision })),
-        );
-        sync();
-        const removed = [...decisions.values()].filter((d) => d === 'removed').length;
-        replace(
-          host,
-          el('header', {}, el('h1', {}, 'Audit reconciled')),
-          el('p', {}, `${removed} of ${candidates.length} assets recorded as not found.`),
-        );
-      },
-    });
-
-  show();
 }
 
 void load();

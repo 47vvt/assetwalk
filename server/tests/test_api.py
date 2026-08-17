@@ -90,6 +90,12 @@ def test_a_malformed_asset_tag_is_rejected_at_the_boundary(client):
     assert response.status_code == 422
 
 
+def test_reconciliation_is_a_report_and_offers_no_way_to_record_a_removal(client):
+    # Deciding a variance is not the walking auditor's job an hour after the
+    # walk, so there is deliberately nothing to POST here.
+    assert client.post(f"/api/walks/{WALK}/reconciliation", json=[]).status_code == 405
+
+
 def test_reconciliation_reports_relocations_rather_than_removals(client):
     client.post(
         f"/api/walks/{WALK}/shelves",
@@ -105,26 +111,6 @@ def test_reconciliation_reports_relocations_rather_than_removals(client):
     body = client.get(f"/api/walks/{WALK}/reconciliation").json()
     assert body["candidates"] == []
     assert sorted(move["asset"] for move in body["relocated"]) == sorted(SHELF[2:])
-
-
-def test_decisions_are_recorded_and_removals_leave_the_shelf(client):
-    client.post(
-        f"/api/walks/{WALK}/shelves",
-        headers={"Idempotency-Key": "c"},
-        json={"walk": WALK, "location": BAY, "confirmed": SHELF[:2], "unresolved": SHELF[2:]},
-    )
-    response = client.post(
-        f"/api/walks/{WALK}/reconciliation",
-        json=[
-            {"asset": SHELF[2], "decision": "removed"},
-            {"asset": SHELF[3], "decision": "found"},
-        ],
-    )
-    assert response.status_code == 204
-
-    history = [entry["asset"] for entry in client.get(f"/api/locations/{BAY}/history").json()]
-    assert SHELF[2] not in history
-    assert SHELF[3] in history
 
 
 def test_sheets_round_trip_through_the_registry(client):

@@ -128,25 +128,6 @@ class ServiceNowStore:
         response.raise_for_status()
         return [ShelfResult(**shelf) for shelf in response.json().get("result", [])]
 
-    def resolve(self, walk_id: str, found: list[str], removed: list[str]) -> None:
-        # `found` flips roster rows exactly as a confirmation does: the asset
-        # was located, and "located" is the whole fact.
-        #
-        # `removed` is sent so the scoped app can drop the position — the shelf
-        # history has to stop claiming the device is there — but it never
-        # touches the roster row. That row stays scanned = false, which is
-        # already ServiceNow's representation of "expected but not found".
-        self.client.post(
-            SCAN_ENDPOINT,
-            json={
-                "audit": walk_id,
-                "scanned": found,
-                "removed": removed,
-                "reconciliation": True,
-            },
-            headers={"Idempotency-Key": f"{walk_id}:reconciliation"},
-        ).raise_for_status()
-
     def record_sheets(self, sheets: list[Sheet]) -> None:
         for sheet in sheets:
             self.client.post(

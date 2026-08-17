@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from adapters.servicenow import ServiceNowStore
 from adapters.sqlstore import SqlStore
-from domain import Decision, Position, Reconciliation, RosterEntry, Sheet, ShelfResult
+from domain import Position, Reconciliation, RosterEntry, Sheet, ShelfResult
 from reconcile import reconcile
 from store import Store
 
@@ -84,27 +84,14 @@ def reconciliation(walk_id: str, store: Bound) -> Reconciliation:
     """Runs across every shelf committed to this walk.
 
     Anything unresolved on one shelf but confirmed on another comes back as
-    relocated, not removed. Only tags unresolved audit-wide reach the auditor
-    as removal candidates.
+    relocated, not removed. Only tags unresolved audit-wide are candidates for
+    being genuinely gone.
+
+    This is a report, not a workflow. Nobody is asked to click "removed" — an
+    unexplained variance is an incident, and the person who walked the shelf an
+    hour ago is the wrong person, at the wrong moment, to close it.
     """
     return reconcile(store.shelves(walk_id))
-
-
-@app.post("/api/walks/{walk_id}/reconciliation", status_code=204)
-def resolve(walk_id: str, decisions: list[Decision], store: Bound) -> Response:
-    """Record the auditor's answers.
-
-    A ``removed`` decision writes nothing to the system of record on purpose:
-    the roster row is already false, which is ServiceNow's representation of
-    "expected and not found". Re-stating it in a second place would create two
-    versions of the same fact that can disagree.
-    """
-    store.resolve(
-        walk_id,
-        found=[d.asset for d in decisions if d.decision == "found"],
-        removed=[d.asset for d in decisions if d.decision == "removed"],
-    )
-    return Response(status_code=204)
 
 
 @app.post("/api/locations/{location_id}/sheets", status_code=204)

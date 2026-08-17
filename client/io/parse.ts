@@ -58,27 +58,6 @@ export function parseRoster(raw: unknown): RosterEntry[] {
   });
 }
 
-export interface Reconciliation {
-  readonly candidates: readonly { asset: AssetTag; location: LocationID }[];
-  readonly unreadable: number;
-}
-
-// Only the candidates reach the auditor. Relocations and new devices are in
-// the response and are deliberately not surfaced mid-reconciliation: a device
-// found on another shelf needs no decision, and putting it on screen invites
-// one.
-export function parseReconciliation(raw: unknown): Reconciliation {
-  return {
-    candidates: list(field(raw, 'reconciliation', 'candidates'), 'candidates').map(
-      (entry, i) => ({
-        asset: tag(entry, `candidates[${i}]`, 'asset'),
-        location: place(entry, `candidates[${i}]`, 'location'),
-      }),
-    ),
-    unreadable: int(raw, 'reconciliation', 'unreadable'),
-  };
-}
-
 export function parseWalkID(raw: string | null): WalkID {
   return walkID(raw ?? '') ?? fail('walk', raw);
 }

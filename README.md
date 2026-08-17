@@ -26,9 +26,9 @@ establishes a history. Every later walk assumes the order is *mostly* unchanged
 
 **The core insight: a window miss is not a decision point.**
 
-The auditor sees the next four entries from history. When the device in hand is
-not among them, there are two possible reasons, and they are indistinguishable
-at that moment:
+The auditor sees the next three entries from history. When the device in hand
+is not among them, there are two possible reasons, and they are
+indistinguishable at that moment:
 
 - it is a brand-new device, or
 - it is sitting further down the history, behind a run of removals.
@@ -38,8 +38,11 @@ So AssetWalk never asks. **Identification does the classifying**, afterwards.
 
 Two primitives, and nothing else:
 
-1. **Tap a window entry** → confirm it. Anything stepped over falls into the pile.
-2. **"Not in list"** → name the device, then a four-step lookup resolves it:
+1. **Tap one of the three on screen** → confirm it. Anything stepped over falls
+   into the pile.
+2. **Type the tag from the note and press Enter** → a four-step lookup resolves
+   it. There is no second screen and no menu of what the audit already knows:
+   one field, and the algorithm decides.
 
 | | Where it is found | What it means |
 |---|---|---|
@@ -54,6 +57,10 @@ phantom new device out of a single tap.
 Step 2 is what makes this fast: **a run of six removals costs one interaction,
 not six.** There is a test asserting exactly that.
 
+The auditor is never shown which of the four steps fired, and never shown the
+shelf's history to pick from. Both would invite them to answer the question the
+algorithm exists to avoid asking.
+
 ### Nothing is marked removed during a walk
 
 The pile is **never populated by an auditor action** — it fills only as a side
@@ -62,11 +69,17 @@ effect of cursor jumps. Nothing in it is a removal; it is unresolved.
 Removal is decided at the end, **across all shelves**, on the server:
 
 1. A tag unresolved on shelf A but confirmed on shelf C was **relocated**.
-2. Only tags unresolved audit-wide are removal candidates, and a human decides.
+2. Only tags unresolved audit-wide are candidates for being genuinely gone.
 
 Per-shelf removal decisions turn every internal move into a false removal plus
 a false new asset. The reason the backend exists at all is that this decision
 needs a global view — and doing it server-side means no device ever needs one.
+
+**The outcome is a report, not a screen.** The app never asks the auditor to
+mark anything removed, because an unexplained variance is an incident and the
+person who walked the shelf an hour ago is the wrong person, at the wrong
+moment, to close it. `GET /api/walks/{id}/reconciliation` and the CSV export
+are where it surfaces.
 
 ## Algorithm 2 — horizontal stacks, by QR substack sheet
 
@@ -158,15 +171,15 @@ non-blank lines:
 
 | Component | Budget | Actual |
 |---|---|---|
-| `client/core` — reducer, sheets, domain | ~400 | **218** |
-| `client/io/parse.ts` — validation boundary | ~50 | **83** |
+| `client/core` — reducer, sheets, domain | ~400 | **206** |
+| `client/io/parse.ts` — validation boundary | ~50 | **65** |
 | `client/io/auth.ts` — PKCE | ~100 | **76** |
-| `client/io/server.ts` — fetches, offline queue | — | **121** |
+| `client/io/server.ts` — fetches, offline queue | — | **105** |
 | `client/pdf` — writer and sheet layout | ~250 | **121** |
 | `client/platform` — capability adapters | ~150 | **125** |
-| `client/ui` + `main.ts` + demo fixture | — | **578** |
-| `server` — the whole backend | ~600 | **606** |
-| Tests (client 459, server 418) | — | **877** |
+| `client/ui` + `main.ts` + demo fixture | — | **392** |
+| `server` — the whole backend | ~600 | **568** |
+| Tests (client 414, server 430) | — | **844** |
 
 More test code than application code in the parts where being wrong is silent.
 That is deliberate.
@@ -187,7 +200,8 @@ Open `http://localhost:8000`. With no `?walk=` in the URL the client runs
 entirely on a built-in fixture and **makes no network requests at all**. That
 is the demo, and it is what a reviewer should open first.
 
-Tap entries, use "Not in list", finish the shelf, download a QR sheet PDF.
+Tap entries, type a tag that is not on screen and press Enter, finish the
+shelf, download a QR sheet PDF.
 
 ### Tests
 
@@ -196,21 +210,19 @@ npm run check                   # build, then the client suite (node:test)
 cd server && uv run pytest -q   # the backend suite
 ```
 
-### A whole audit, standalone — and how to reach reconciliation
+### A whole audit, standalone — and the variance report
 
-Reconciliation is the one screen the fixture cannot show, because deciding a
-removal needs *every* shelf in the walk and the fixture is a single shelf. Run
-the real thing instead — no ServiceNow instance, no sign-in, four commands:
+Reconciliation needs *every* shelf in the walk, so the single-shelf fixture
+cannot produce one. Run the real thing instead — no ServiceNow instance, no
+sign-in:
 
 ```sh
 npm ci && npm run build
 
 cd server
 uv sync
-cp ../client/config.example.json ../client/config.json   # then delete the
-                                                         # instance + clientID
-                                                         # lines: no instance,
-                                                         # no sign-in
+printf '{ "backend": "/api" }\n' > ../client/config.json   # no instance,
+                                                          # no sign-in
 uv run python cli.py import walk-demo example-walk.csv
 uv run uvicorn main:app --port 8000
 ```
@@ -222,23 +234,23 @@ Then walk **two** shelves, because that is what makes reconciliation mean
 something:
 
 1. `http://localhost:8000/index.html?walk=walk-demo&location=BAY-A3` — confirm
-   a few devices and leave others unfound, then **Finish shelf**.
+   a few devices, leave others unfound, then **Finish shelf**.
 2. `http://localhost:8000/index.html?walk=walk-demo&location=BAY-B1` — this
-   shelf holds `UOM220126`, which the sample data lists on A3. Use **Not one of
-   these** to record it here.
-3. On the completion screen, **Reconcile this walk**.
+   shelf holds `UOM220126`, which the sample data lists on A3. Type it into the
+   field and press Enter to record it here.
 
-`UOM220126` will not be on the list: it was unresolved on A3 and confirmed on
-B1, so it is a relocation, not a removal. Only tags nobody found anywhere ask
-for a decision. The button stays available once the outbound queue has drained
-— reconciling while a shelf is still queued would make an unwalked shelf look
-like a room full of missing laptops, so the app refuses.
-
-Afterwards:
+Then read the outcome:
 
 ```sh
-uv run python cli.py export walk-demo > variances.csv
+uv run python cli.py export walk-demo
+# asset,outcome,expected_at,found_at
+# UOM220126,relocated,BAY-A3,BAY-B1
+# UOM420696,not_found,BAY-A3,
 ```
+
+`UOM220126` comes back as a **relocation, not a variance** — it was unresolved
+on A3 and confirmed on B1. Only tags nobody found anywhere are reported as not
+found. `GET /api/walks/walk-demo/reconciliation` returns the same thing as JSON.
 
 Standalone SQLite is **not a mock**. Many organisations have this exact
 physical audit problem and no ITAM platform at all; SQLite plus CSV import and

@@ -63,16 +63,11 @@ Header `Idempotency-Key` is required. A repeated key must be a no-op.
 }
 ```
 
-Reconciliation decisions arrive at the same endpoint:
-
-```jsonc
-{
-  "audit": "...",
-  "scanned": ["UOM118820"],   // found after all: flip scanned = true
-  "removed": ["UOM420696"],   // drop the position row; touch no roster row
-  "reconciliation": true
-}
-```
+There is no endpoint for recording a removal, deliberately. A roster row left
+at `scanned = false` is already ServiceNow's representation of "expected and
+not found", and reconciliation is a report rather than a workflow — nobody is
+asked to click "removed", least of all the person who walked the shelf an hour
+ago.
 
 ### `GET /api/x_assetwalk/shelves?audit=<id>`
 

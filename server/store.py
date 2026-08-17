@@ -41,15 +41,6 @@ class Store(Protocol):
         happens here and not on a device.
         """
 
-    def resolve(self, walk_id: str, found: list[str], removed: list[str]) -> None:
-        """Record the auditor's reconciliation decisions.
-
-        ``found`` assets were located after all and are confirmed. ``removed``
-        assets deliberately produce no write to the system of record: the
-        roster row already says "expected and not found", and re-stating that
-        somewhere else creates two versions of one fact that can disagree.
-        """
-
     def record_sheets(self, sheets: list[Sheet]) -> None:
         """Register printed QR sheets: which were printed, for which substacks,
         with what counts."""

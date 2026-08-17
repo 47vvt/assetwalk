@@ -83,19 +83,6 @@ class Instance:
         body = json.loads(request.content)
         self.scans.append(body)
 
-        if body.get("reconciliation"):
-            expected_at = {
-                asset: shelf["location"]
-                for shelf in self.shelf_results.values()
-                for asset in shelf["unresolved"]
-            }
-            for asset in body["scanned"]:
-                place = expected_at.get(asset)
-                if place is not None:
-                    self.positions.append((place, len(self.positions), asset))
-            self.positions = [p for p in self.positions if p[2] not in body["removed"]]
-            return httpx.Response(200, json={"result": "ok"})
-
         location = body["location"]
         self.shelf_results[location] = {
             "walk": body["audit"],
@@ -191,29 +178,6 @@ def test_a_second_walk_of_a_shelf_supersedes_the_first(store):
     shelves = [s for s in store.shelves(WALK) if s.location == BAY]
     assert len(shelves) == 1
     assert shelves[0].confirmed == SHELF[:3]
-
-
-def test_a_removal_writes_nothing_to_the_record(store):
-    # The unresolved assets simply stop being in the history. Nothing anywhere
-    # says "removed" — that decision has not been made yet.
-    store.commit(
-        ShelfResult(walk=WALK, location=BAY, confirmed=[SHELF[0]], unresolved=SHELF[1:]),
-        "key-removal",
-    )
-    store.resolve(WALK, found=[], removed=list(SHELF[1:]))
-    assert [position.asset for position in store.history(BAY)] == [SHELF[0]]
-
-
-def test_an_asset_found_at_reconciliation_returns_to_its_shelf(store):
-    store.commit(
-        ShelfResult(walk=WALK, location=BAY, confirmed=SHELF[:4], unresolved=SHELF[4:]),
-        "key-found",
-    )
-    store.resolve(WALK, found=[SHELF[5]], removed=[SHELF[4]])
-
-    history = [position.asset for position in store.history(BAY)]
-    assert SHELF[5] in history
-    assert SHELF[4] not in history
 
 
 def test_printed_sheets_are_registered_with_their_counts(store):
