@@ -2,10 +2,10 @@
 //
 // Scanning is a mode rather than a one-shot. An auditor who has pulled a
 // device out to read its barcode is usually about to do it again, so the
-// camera stays live and each read lands underneath it. Everything below the
-// viewfinder — the last confirmed device, the tag field, the three actions —
-// is the walk screen's, in the same order and the same places. The auditor's
-// job has not changed, only how they are reading the label.
+// camera stays live. Everything around it — the last confirmed device above,
+// the tag field and the three actions below — is the walk screen's, in the
+// same order and the same places. The camera is the only thing that changes
+// between the two screens; the auditor's job has not.
 
 import type { State } from '../core/walk.js';
 import type { Camera } from '../platform/scanner.js';
@@ -41,6 +41,11 @@ export function renderScan(
       ),
     ),
 
+    // Directly under the header, exactly where the walk screen puts it. The
+    // camera is what changes between the two screens; nothing else should have
+    // to be found again in a new place.
+    lastRow(state),
+
     // The video keeps the shelf and the app in view at the same time. A
     // fullscreen preview would make the auditor choose between looking at the
     // rack and looking at what they have recorded.
@@ -68,8 +73,6 @@ export function renderScan(
           el('h2', { class: 'lead' }, 'More than one code in frame — tap the one you are holding'),
           ...ambiguous.map((value) => button(value, () => handlers.choose(value), 'entry')),
         ),
-
-    lastRow(state),
 
     // Manual entry stays available here: a barcode that will not read is
     // exactly when the auditor needs to key the tag, and sending them back to
