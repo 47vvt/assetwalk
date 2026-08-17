@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Signing in…</title>
+    <!--
+      The OAuth redirect target. It hands the authorization code back to the
+      app window and closes itself, which is what lets the PKCE verifier stay
+      in a local variable in the app rather than being written to storage.
+
+      It runs no application code and loads nothing: 'unsafe-inline' below
+      covers the four lines in the script element and nothing else, and
+      connect-src 'none' means this page cannot send the code anywhere.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+        default-src 'none';
+        script-src 'unsafe-inline';
+        connect-src 'none';
+        form-action 'none';
+        base-uri 'none'"
+    />
+  </head>
+  <body>
+    <p>Signing in…</p>
+    <script>
+      // Same origin as the app, so the app's origin check accepts it and no
+      // other page can read the code.
+      window.opener?.postMessage(window.location.search, window.location.origin);
+      window.close();
+    </script>
+  </body>
+</html>

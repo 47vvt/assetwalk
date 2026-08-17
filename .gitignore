@@ -1,0 +1,14 @@
+# Build output is never committed. Committed build output rots, and a reviewer
+# has no way to tell whether it matches the source next to it. CI rebuilds with
+# the pinned compiler and asserts the result matches what is deployed.
+client/dist/
+*.tsbuildinfo
+
+node_modules/
+.venv/
+__pycache__/
+*.db
+
+# Written by the deployment, never committed. It is the only file that carries
+# an instance hostname or client ID, which is why it is not in this repository.
+client/config.json

@@ -1,0 +1,196 @@
+/* Audits happen standing up, one-handed, in bad light. Everything here serves
+   that: large tap targets, high contrast, no animation to wait for. */
+
+:root {
+  --ink: #10151c;
+  --paper: #f6f7f9;
+  --line: #c9cfd8;
+  --accent: #0b5fa5;
+  --danger: #a52216;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #eef2f7;
+    --paper: #12161b;
+    --line: #333c47;
+    --accent: #5fa8e8;
+    --danger: #e8705f;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0 1rem 4rem;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.4 system-ui, sans-serif;
+  max-width: 40rem;
+  margin-inline: auto;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 1rem 0 0.5rem;
+  border-bottom: 2px solid var(--line);
+}
+
+h1 {
+  font-size: 1.25rem;
+  margin: 0;
+  flex: 1;
+}
+
+h2 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+  margin: 1rem 0 0.4rem;
+}
+
+.progress,
+.pending {
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 2px solid var(--line);
+  border-radius: 0.5rem;
+  /* Thumb-sized: mis-taps are silent corruption, and Undo is one extra step
+     the auditor should rarely need. */
+  min-height: 3.25rem;
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+}
+
+button.primary {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+button.finish {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--paper);
+  font-weight: 600;
+}
+
+button.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.entry {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 0.5rem;
+}
+
+.entry strong {
+  /* The last four digits, at the size they are readable from arm's length. */
+  font-size: 2rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  display: block;
+}
+
+.entry small,
+.candidate small {
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+}
+
+.recent .entry strong {
+  font-size: 1.25rem;
+}
+
+.recent {
+  opacity: 0.7;
+}
+
+.entry.done {
+  border-style: dashed;
+  opacity: 0.45;
+}
+
+nav {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+nav button.finish,
+nav button:only-child {
+  grid-column: 1 / -1;
+}
+
+.nudge {
+  border-left: 4px solid var(--accent);
+  padding: 0.6rem 0.8rem;
+  margin: 0.75rem 0;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.readout {
+  display: block;
+  font-size: 2.25rem;
+  font-variant-numeric: tabular-nums;
+  padding: 0.5rem 0;
+  min-height: 3rem;
+}
+
+.keypad {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.keypad button {
+  font-size: 1.5rem;
+  min-height: 3.75rem;
+}
+
+.candidate {
+  border-top: 1px solid var(--line);
+  padding-top: 0.75rem;
+}
+
+.candidate nav {
+  grid-template-columns: 1fr;
+}
+
+.empty {
+  opacity: 0.55;
+  font-size: 0.9rem;
+}
+
+/* The video stays visible with a target overlay rather than going fullscreen:
+   auditors need to see the shelf and the app at the same time. */
+.scanner video,
+header + video {
+  width: 100%;
+  border-radius: 0.5rem;
+  background: #000;
+}
+
+.target {
+  height: 3px;
+  background: var(--danger);
+  margin: -6rem 2rem 6rem;
+  opacity: 0.8;
+}

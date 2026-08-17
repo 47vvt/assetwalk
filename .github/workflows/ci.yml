@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  client:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # `npm ci` only. It installs exactly the lockfile and fails if
+      # package.json and the lockfile disagree, which `npm install` will
+      # quietly resolve on your behalf.
+      - run: npm ci
+
+      # The dependency count is a claim the README makes and a stranger should
+      # be able to check in thirty seconds. This is that check, automated.
+      - name: Assert the client has one dev dependency and no runtime ones
+        run: |
+          node -e '
+            const pkg = require("./package.json");
+            const dev = Object.keys(pkg.devDependencies ?? {});
+            const run = Object.keys(pkg.dependencies ?? {});
+            if (run.length !== 0) throw new Error(`runtime deps: ${run}`);
+            if (dev.length !== 1 || dev[0] !== "typescript") throw new Error(`dev deps: ${dev}`);
+          '
+
+      # Vendored code is trusted because of its upstream hash, not because it
+      # passes our lint bar, so the hash is verified on every run. The first
+      # 990 lines are byte-identical to upstream; the rest is the three-line
+      # export footer documented in the file and in the README.
+      - name: Verify the vendored QR encoder against upstream
+        run: |
+          upstream=$(head -n 990 client/vendor/qr-encoder.ts | sha256sum | cut -d' ' -f1)
+          vendored=$(sha256sum client/vendor/qr-encoder.ts | cut -d' ' -f1)
+          echo "upstream portion: $upstream"
+          echo "vendored file:    $vendored"
+          test "$upstream" = 1dc03fb5a10e0e2318ea162755bbdb9977ca6ce52cff959e9c9b6deafdccda9c
+          test "$vendored" = 7e8cc4ebc98076bcca52fa0ecfa4b4ffe3da60539a8dc2c36e2f01afb88b95d5
+
+      - run: npm run build
+      - run: npm test
+
+      # Reproducible builds substitute for having no build step at all. If the
+      # same source and the same pinned compiler do not produce the same bytes
+      # twice, "the deployed artifact matches this source" is not checkable.
+      - name: Assert the build is reproducible
+        run: |
+          find client/dist -name '*.js' -type f | sort | xargs sha256sum > /tmp/first.sha256
+          npm run clean
+          npm run build
+          find client/dist -name '*.js' -type f | sort | xargs sha256sum > /tmp/second.sha256
+          diff /tmp/first.sha256 /tmp/second.sha256
+
+      # Emitted JavaScript must be the source with type annotations removed and
+      # nothing else. `erasableSyntaxOnly` enforces that at compile time; this
+      # catches a bundler or minifier being introduced through some other door.
+      - name: Assert nothing bundled or minified the output
+        run: |
+          node -e '
+            const { readFileSync } = require("node:fs");
+            const source = readFileSync("client/core/walk.ts", "utf8");
+            const emitted = readFileSync("client/dist/core/walk.js", "utf8");
+            for (const marker of ["four-step lookup", "function reduce", "const _never"]) {
+              if (!emitted.includes(marker)) throw new Error(`emitted output lost: ${marker}`);
+            }
+            if (!source.includes("four-step lookup")) throw new Error("source marker moved");
+          '
+
+  server:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: '0.5.24'
+
+      # --frozen fails rather than updating the lockfile, so a dependency
+      # cannot change without showing up in a diff.
+      - run: uv sync --frozen
+      - run: uv run pytest -q
+
+      - name: Assert the backend has three direct dependencies
+        run: |
+          uv run python -c '
+          import tomllib
+          with open("pyproject.toml", "rb") as f:
+              deps = tomllib.load(f)["project"]["dependencies"]
+          names = sorted(d.split("==")[0] for d in deps)
+          assert names == ["fastapi", "httpx", "uvicorn"], names
+          assert all("==" in d for d in deps), "every dependency must be pinned exactly"
+          '
+
+  secrets:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # The instance hostname must not appear in a public repository. This is a
+      # blunt check and it is meant to be: it fails loudly on the one mistake
+      # that cannot be undone once the commit is public.
+      - name: Assert no instance hostname or deployment config was committed
+        run: |
+          # config.example.json is excluded and is the only exclusion: it is a
+          # committed template whose hostname is the literal REPLACE-ME.
+          if grep -rIn --exclude-dir=.git --exclude=config.example.json \
+               -e 'service-now\.com' -e 'servicenowservices\.com' .; then
+            echo 'A ServiceNow instance hostname is in the repository.' >&2
+            exit 1
+          fi
+          if [ -f client/config.json ]; then
+            echo 'client/config.json is deployment config and must not be committed.' >&2
+            exit 1
+          fi

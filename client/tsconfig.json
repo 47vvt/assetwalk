@@ -1,0 +1,30 @@
+{
+  // tsc strips types and does nothing else: no downlevelling, no bundling, no
+  // minification. Emitted .js stays line-for-line comparable to the .ts a
+  // reviewer reads. Do not add transforms here.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "sourceMap": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    // Rejects TypeScript syntax that emits code rather than erasing (enums,
+    // namespaces, parameter properties). This is what mechanically enforces
+    // "type-stripping only" instead of leaving it to review.
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "composite": true,
+    "rootDir": ".",
+    "outDir": "./dist",
+    "lib": ["ES2022", "DOM"]
+  },
+  "references": [{ "path": "./vendor" }],
+  "include": ["**/*.ts"],
+  "exclude": ["vendor", "dist"]
+}

@@ -1,0 +1,19 @@
+{
+  // Vendored third-party code is a separate TypeScript project so that our
+  // settings are never quietly relaxed to accommodate someone else's file.
+  // Its trust comes from the upstream SHA-256 in README.md, not from passing
+  // our lint bar. The one setting dropped here is `noUncheckedIndexedAccess`:
+  // upstream indexes into fixed-size numeric tables constantly and predates
+  // the flag. Everything under /client is compiled with it on.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "composite": true,
+    "sourceMap": true,
+    "rootDir": ".",
+    "outDir": "../dist/vendor"
+  },
+  "include": ["*.ts"]
+}

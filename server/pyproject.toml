@@ -1,0 +1,21 @@
+[project]
+name = "assetwalk-server"
+version = "0.1.0"
+description = "AssetWalk backend — history slices, reconciliation, ServiceNow commit"
+requires-python = ">=3.11"
+
+# Three direct dependencies. The threat surface of this project is not the code
+# in it, it is the transitive tree nobody reads, so this list is a number the
+# README publishes and anyone can check in thirty seconds.
+dependencies = [
+    "fastapi==0.115.6",
+    "uvicorn==0.34.0",
+    "httpx==0.28.1",
+]
+
+[dependency-groups]
+dev = ["pytest==8.3.4"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

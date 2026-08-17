@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>AssetWalk</title>
+
+    <!--
+      connect-src is the load-bearing line. It makes this client provably
+      unable to send scan data anywhere except its own backend, which is a
+      check a reviewer can complete in about ten seconds without reading any
+      JavaScript.
+
+      Deployment rewrites 'self' here to the backend origin and the configured
+      ServiceNow instance. That substitution is the only place an instance
+      hostname exists, and it happens at deploy time — never in this repository.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+        default-src 'none';
+        script-src 'self';
+        style-src 'self';
+        img-src 'self' blob:;
+        media-src 'self' blob:;
+        connect-src 'self';
+        form-action 'none';
+        base-uri 'none'"
+    />
+    <!--
+      frame-ancestors is deliberately absent above: browsers ignore it when it
+      arrives in a meta element, and a directive that silently does nothing is
+      worse than none. It belongs in the response header the deployment sets,
+      alongside HSTS.
+    -->
+
+    <!-- Same-origin, so it needs no relaxation of img-src. -->
+    <link rel="icon" href="./favicon.svg" />
+    <link rel="stylesheet" href="./app.css" />
+    <script type="module" src="./dist/main.js"></script>
+  </head>
+  <body></body>
+</html>

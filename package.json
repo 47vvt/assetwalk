@@ -1,0 +1,18 @@
+{
+  "name": "assetwalk",
+  "version": "0.1.0",
+  "description": "Physical asset auditing — algorithmic verification of physical inventory",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b client",
+    "clean": "tsc -b client --clean",
+    "check": "tsc -b client && node --test 'client/dist/test/*.test.js'",
+    "test": "node --test 'client/dist/test/*.test.js'",
+    "serve": "node --run build && python3 -m http.server 8000 --directory client"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}
