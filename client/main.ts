@@ -33,6 +33,7 @@ let misses = 0;
 // screen the auditor is actually on.
 let camera: Camera | null = null;
 let ambiguous: readonly string[] = [];
+let torch = false;
 let syncing = false;
 
 // One drain loop at a time. Each shelf completion would otherwise start
@@ -117,22 +118,36 @@ function dispatch(event: Event): void {
 
 function render(): void {
   if (state === null) return;
+  // The same three actions on both screens; only the first one's job differs.
+  const handlers = {
+    dispatch,
+    toggleScan: () => (camera === null ? void openScan() : closeScan()),
+    finish: () => void finish(),
+  };
+
   if (camera !== null) {
-    renderScan(host, state, camera, ambiguous, {
-      dispatch,
+    const live = camera;
+    renderScan(host, state, live, torch, ambiguous, {
+      ...handlers,
       choose: (value) => {
         ambiguous = [];
         accept(value);
       },
-      close: closeScan,
+      toggleTorch: () => {
+        torch = !torch;
+        render();
+        void live.setTorch(torch).catch(() => {
+          // A device can advertise the torch constraint and still refuse it.
+          // Put the label back rather than leaving it claiming a light that
+          // is not on.
+          torch = false;
+          render();
+        });
+      },
     });
     return;
   }
-  renderWalk(host, state, misses, pendingCount(), {
-    dispatch,
-    scan: () => void openScan(),
-    finish: () => void finish(),
-  });
+  renderWalk(host, state, misses, pendingCount(), handlers);
 }
 
 // One barcode read locates the cursor in history definitively, which is why
@@ -169,10 +184,15 @@ async function openScan(): Promise<void> {
 }
 
 function closeScan(): void {
+  stopCamera();
+  render();
+}
+
+function stopCamera(): void {
   camera?.stop();
   camera = null;
   ambiguous = [];
-  render();
+  torch = false;
 }
 
 function accept(raw: string): void {
@@ -192,6 +212,9 @@ async function finish(): Promise<void> {
   const walk = state.walk;
   const location = state.location;
 
+  // Finish is reachable from the scan screen too, so the camera is released
+  // before the walk state it belongs to goes away.
+  stopCamera();
   if (backend !== null) queueShelf(finished);
   // The history slice is dropped here: immediately after the confirmations are
   // durable, and before anything else can take a reference to it. The device

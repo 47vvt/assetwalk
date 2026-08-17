@@ -1,14 +1,23 @@
-// The two things the walk screen and the scan screen both need: the device
-// just confirmed, and a way to name one that is not on screen.
+// The parts of the walk that do not change when the camera comes on: the
+// device just confirmed, the field for naming one that is not on screen, and
+// the row of actions underneath.
 //
-// Shared because there are exactly two callers, not because a third might turn
-// up. Both screens must agree on what "last confirmed" means and on what a
-// typed tag does, and writing that twice is how they would come to disagree.
+// Scanning is a mode of the walk, not a different job, so both screens are the
+// same screen with a different middle. Keeping these here is what makes that
+// true rather than merely intended — two copies would drift, and then the walk
+// would record different things depending on which screen the auditor happened
+// to be looking at.
 
 import { assetTag, tagShape } from '../core/types.js';
 import { lastConfirmed } from '../core/walk.js';
 import type { Event, State } from '../core/walk.js';
-import { el, input, tagLabel } from './dom.js';
+import { button, el, input, tagLabel } from './dom.js';
+
+export interface Actions {
+  readonly dispatch: (event: Event) => void;
+  readonly toggleScan: () => void;
+  readonly finish: () => void;
+}
 
 // Every screen is rebuilt on every event, which destroys the field along with
 // everything else. An auditor working through a run of unrecognised devices
@@ -125,4 +134,32 @@ export function tagField(state: State, dispatch: (event: Event) => void): HTMLEl
       track,
     ),
   );
+}
+
+// The same three actions in the same places on both screens. Only the first
+// one's label and job change with the mode: an auditor who has learned where
+// Undo is should not have to learn again because the camera is on.
+export function actions(state: State, scanning: boolean, handlers: Actions): HTMLElement {
+  return el(
+    'nav',
+    {},
+    button(
+      scanning ? 'Stop scanning' : 'Scan a barcode',
+      handlers.toggleScan,
+      scanning ? 'primary' : '',
+    ),
+    undoButton(state, handlers.dispatch),
+    button('Finish shelf', handlers.finish, 'finish wide'),
+  );
+}
+
+// One undo, and it takes back whatever the last action was — a tapped entry, a
+// typed tag, a scan.
+function undoButton(state: State, dispatch: (event: Event) => void): HTMLElement {
+  const node = button('Undo last action', () => dispatch({ kind: 'UNDO' }), 'quiet');
+  // Nothing has happened yet, so there is nothing to take back. Disabled
+  // rather than hidden: a control that appears and disappears is one the
+  // auditor has to find again each time.
+  if (state.previous === null) node.setAttribute('disabled', '');
+  return node;
 }

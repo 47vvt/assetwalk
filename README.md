@@ -59,13 +59,15 @@ later in the walk reveals it, and the run it swept into the pile stays
 unresolved for the rest of the audit. Undoing a confirmation puts that run back
 in the window.
 
-**Scanning is a screen, not a one-shot.** A barcode read locates the cursor in
-history definitively, so it is where an auditor goes when they have lost their
-place — and they stay there until they have found it. The camera replaces the
-window; the last confirmed device and the tag field sit underneath it, because
-the job has not changed, only how the label is being read. A frame with several
-codes in it never resolves itself: stacked devices sit close together, and
-taking the first one silently marks the wrong asset scanned.
+**Scanning is a mode of the walk, not a separate one.** A barcode read locates
+the cursor in history definitively, so it is where an auditor goes when they
+have lost their place — and they stay there until they have found it. The
+camera replaces the window and nothing else moves: the last confirmed device,
+the tag field, and the same three actions in the same places, with only the
+first one's label and job changing. Someone who has learned where Undo is does
+not have to learn again because the camera is on. A frame with several codes in
+it never resolves itself: stacked devices sit close together, and taking the
+first one silently marks the wrong asset scanned.
 
 | | Where it is found | What it means |
 |---|---|---|
@@ -200,7 +202,7 @@ non-blank lines:
 | `client/io/server.ts` — fetches, offline queue | — | **105** |
 | `client/pdf` — writer and sheet layout | ~250 | **121** |
 | `client/platform` — capability adapters | ~150 | **125** |
-| `client/ui` + `main.ts` + demo fixture | — | **507** |
+| `client/ui` + `main.ts` + demo fixture | — | **526** |
 | `server` — the whole backend | ~600 | **561** |
 | Tests (client 506, server 417) | — | **923** |
 

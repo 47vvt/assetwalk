@@ -2,27 +2,27 @@
 //
 // Scanning is a mode rather than a one-shot. An auditor who has pulled a
 // device out to read its barcode is usually about to do it again, so the
-// camera stays live and each read lands underneath it. The rest of the screen
-// is deliberately the same as the walk screen — the last confirmed device and
-// the tag field — because the auditor's job has not changed, only how they are
-// reading the label.
+// camera stays live and each read lands underneath it. Everything below the
+// viewfinder — the last confirmed device, the tag field, the three actions —
+// is the walk screen's, in the same order and the same places. The auditor's
+// job has not changed, only how they are reading the label.
 
-import type { Event, State } from '../core/walk.js';
+import type { State } from '../core/walk.js';
 import type { Camera } from '../platform/scanner.js';
 import { button, el, replace } from './dom.js';
-import { lastRow, restoreFocus, tagField } from './entry.js';
-import { undoButton } from './walk-view.js';
+import { actions, lastRow, restoreFocus, tagField } from './entry.js';
+import type { Actions } from './entry.js';
 
-export interface ScanHandlers {
-  readonly dispatch: (event: Event) => void;
+export interface ScanHandlers extends Actions {
   readonly choose: (value: string) => void;
-  readonly close: () => void;
+  readonly toggleTorch: () => void;
 }
 
 export function renderScan(
   host: HTMLElement,
   state: State,
   camera: Camera,
+  torch: boolean,
   ambiguous: readonly string[],
   handlers: ScanHandlers,
 ): void {
@@ -44,15 +44,18 @@ export function renderScan(
     // The video keeps the shelf and the app in view at the same time. A
     // fullscreen preview would make the auditor choose between looking at the
     // rack and looking at what they have recorded.
-    el('div', { class: 'viewfinder' }, camera.video, el('div', { class: 'target' })),
-
-    camera.hasTorch
-      ? el(
-          'nav',
-          {},
-          button('Torch on', () => void camera.setTorch(true), 'wide'),
-        )
-      : '',
+    el(
+      'div',
+      { class: 'viewfinder' },
+      camera.video,
+      el('div', { class: 'target' }),
+      // Comms rooms, under-desk labels and the bottom of a rack are dark, and
+      // an auditor who cannot turn the light on stops using the camera. On the
+      // glass rather than below it, so it costs no room the actions need.
+      camera.hasTorch
+        ? button(torch ? 'Torch off' : 'Torch on', handlers.toggleTorch, 'torch')
+        : '',
+    ),
 
     // Several codes in one frame. Stacked devices sit close enough together
     // that this is routine, and taking the first one silently marks the wrong
@@ -73,12 +76,7 @@ export function renderScan(
     // the other screen to do it would be the wrong moment to change screens.
     tagField(state, handlers.dispatch),
 
-    el(
-      'nav',
-      {},
-      undoButton(state, handlers.dispatch),
-      button('Stop scanning', handlers.close, 'primary'),
-    ),
+    actions(state, true, handlers),
   );
 
   restoreFocus();

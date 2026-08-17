@@ -7,9 +7,10 @@
 // hand?" without being read.
 
 import { windowOf } from '../core/walk.js';
-import type { Event, State } from '../core/walk.js';
+import type { State } from '../core/walk.js';
 import { button, el, replace, tagLabel } from './dom.js';
-import { lastRow, restoreFocus, tagField } from './entry.js';
+import { actions, lastRow, restoreFocus, tagField } from './entry.js';
+import type { Actions } from './entry.js';
 
 // After three unrecognised devices in a row the auditor is more likely on the
 // wrong shelf than looking at three unknown devices. This is a nudge to
@@ -17,18 +18,12 @@ import { lastRow, restoreFocus, tagField } from './entry.js';
 // starts classifying devices by how confused the auditor seems.
 const STALL_LIMIT = 3;
 
-export interface WalkHandlers {
-  readonly dispatch: (event: Event) => void;
-  readonly scan: () => void;
-  readonly finish: () => void;
-}
-
 export function renderWalk(
   host: HTMLElement,
   state: State,
   misses: number,
   pending: number,
-  handlers: WalkHandlers,
+  handlers: Actions,
 ): void {
   const upcoming = windowOf(state);
   const ahead = state.history.length - state.cursor;
@@ -85,26 +80,9 @@ export function renderWalk(
 
     tagField(state, handlers.dispatch),
 
-    el(
-      'nav',
-      {},
-      button('Scan a barcode', handlers.scan),
-      // One undo, and it takes back whatever the last action was — a tapped
-      // entry, a typed tag, a scan. It is beside the other actions rather than
-      // attached to the row above so there is exactly one place to look.
-      undoButton(state, handlers.dispatch),
-      button('Finish shelf', handlers.finish, 'finish wide'),
-    ),
+    actions(state, false, handlers),
   );
 
   restoreFocus();
 }
 
-export function undoButton(state: State, dispatch: (event: Event) => void): HTMLElement {
-  const node = button('Undo last action', () => dispatch({ kind: 'UNDO' }), 'quiet');
-  // Nothing has happened yet, so there is nothing to take back. Disabled
-  // rather than hidden: a control that appears and disappears is one the
-  // auditor has to find again each time.
-  if (state.previous === null) node.setAttribute('disabled', '');
-  return node;
-}

@@ -379,3 +379,15 @@ button.quiet {
 .ambiguous {
   margin-top: 0.75rem;
 }
+
+/* On the glass, so the torch costs none of the room the three actions need. */
+.torch {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.4rem 1rem;
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.7);
+  background: rgba(0, 0, 0, 0.45);
+}
