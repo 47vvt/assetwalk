@@ -11,10 +11,12 @@ import { encodeSheetPayload } from '../core/sheet.js';
 import type { Sheet } from '../core/sheet.js';
 import qrcodegen from '../vendor/qr-encoder.js';
 
-// 1mm per module. The floor for reliable phone-camera reads off laser print is
-// about 0.5mm; 1mm leaves margin for creased paper and a sheet read at arm's
-// length in bad light, and the page has room to spare.
-const MODULE = 1 * MM;
+// 1.6mm per module. The floor for reliable phone-camera reads off laser print
+// is about 0.5mm; this is three times that, because the sheet is read from the
+// front of a stack at arm's length in bad light, and because a page holding
+// forty tags still has half of itself spare. Nothing is gained by printing a
+// smaller code here.
+const MODULE = 1.6 * MM;
 
 // ISO/IEC 18004 requires 4 empty modules on every side. Scanners use the quiet
 // zone to find the symbol's edge, and printing text or a border into it is the
