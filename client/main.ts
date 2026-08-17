@@ -3,19 +3,32 @@
 // exists in this module's local variables and nowhere else, and it is dropped
 // the moment the confirmations are safely queued.
 
-import { assetTag, locationID } from './core/types.js';
+import { assetTag, locationID, walkID } from './core/types.js';
 import type { AssetTag, LocationID, WalkID } from './core/types.js';
 import { begin, reduce, result } from './core/walk.js';
 import type { Event, State } from './core/walk.js';
-import { parseConfig, parseWalkID } from './io/parse.js';
+import { parseConfig } from './io/parse.js';
 import { oauthFrom, signIn } from './io/auth.js';
-import { drain, fetchHistory, fetchRoster, pendingCount, queueSheets, queueShelf } from './io/server.js';
+import {
+  addLocation,
+  createWalk,
+  drain,
+  fetchHistory,
+  fetchLocations,
+  fetchRoster,
+  fetchWalks,
+  pendingCount,
+  queueSheets,
+  queueShelf,
+  removeLocation,
+} from './io/server.js';
 import type { Backend } from './io/server.js';
 import { confirmScan, rejectScan } from './platform/haptics.js';
 import { openCamera, scanningAvailable } from './platform/scanner.js';
 import type { Camera } from './platform/scanner.js';
 import { DEMO_HISTORY, DEMO_LOCATION, DEMO_ROSTER, DEMO_WALK } from './demo-shelf.js';
 import { button, el, replace } from './ui/dom.js';
+import { renderAudits, renderNewAudit, renderShelves } from './ui/audits-view.js';
 import { renderSheets } from './ui/sheets-view.js';
 import { renderScan } from './ui/scan-view.js';
 import { renderWalk } from './ui/walk-view.js';
@@ -49,51 +62,103 @@ function sync(): void {
 }
 
 async function load(): Promise<void> {
-  const params = new URLSearchParams(window.location.search);
-  const walk = params.get('walk');
-  const location = locationID(params.get('location') ?? '');
+  // No config.json at all means nobody has deployed this — it is a checkout
+  // being opened in a browser. Run on the fixture rather than failing, because
+  // that is what a reviewer does first and what gets demoed.
+  const config = await fetch('./config.json')
+    .then((response) => (response.ok ? response.json() : null))
+    .then((raw) => (raw === null ? null : parseConfig(raw)))
+    .catch(() => null);
 
-  // With no walk in the URL the client runs entirely on the fixture. That is
-  // the standalone demo path, and it never touches the network.
-  if (walk === null || location === null) {
+  if (config === null) {
     state = begin(DEMO_WALK, DEMO_LOCATION, DEMO_HISTORY, DEMO_ROSTER);
     return render();
   }
 
-  // Config is fetched at runtime, never compiled in — the instance hostname
-  // and client ID are not in this repository and cannot be.
-  const id = parseWalkID(walk);
-  const config = parseConfig(await (await fetch('./config.json')).json());
-
-  // A standalone SQLite deployment has nothing to sign in to, so it starts
-  // walking immediately.
+  // A standalone SQLite deployment has nothing to sign in to, so it goes
+  // straight to the audits. Otherwise sign-in is behind a button, because
+  // browsers only open the authorisation window from a user gesture and PKCE
+  // needs that window in order to keep the verifier out of storage.
   if (config.oauth === null) {
     backend = { base: config.backend, token: null };
-    return open(id, location);
+    return route();
   }
 
-  // Otherwise sign-in is behind a button, because browsers only open the
-  // authorisation window from a user gesture and PKCE needs that window in
-  // order to keep the verifier out of storage.
   const { instance, clientID } = config.oauth;
   replace(
     host,
     el('header', {}, el('h1', {}, 'AssetWalk')),
-    el('p', {}, `Walk ${id} · ${location}`),
-    button('Sign in', () => void start(config.backend, instance, clientID, id, location), 'finish'),
+    button('Sign in', () => void start(config.backend, instance, clientID), 'finish wide'),
   );
 }
 
-async function start(
-  base: string,
-  instance: string,
-  clientID: string,
-  walk: WalkID,
-  location: LocationID,
-): Promise<void> {
+async function start(base: string, instance: string, clientID: string): Promise<void> {
   const callback = new URL('./callback.html', window.location.href).href;
   backend = { base, token: await signIn(oauthFrom(instance, clientID, callback)) };
+  return route();
+}
+
+// The URL is the screen. A walk in progress survives a reload, a shelf can be
+// linked to, and the back button does what it looks like it does.
+async function route(): Promise<void> {
+  const params = new URLSearchParams(window.location.search);
+  const walk = walkID(params.get('walk') ?? '');
+  const location = locationID(params.get('location') ?? '');
+
+  if (walk === null) return audits();
+  if (location === null) return shelves(walk);
   return open(walk, location);
+}
+
+function go(params: string): void {
+  window.history.pushState(null, '', params === '' ? window.location.pathname : `?${params}`);
+  void route();
+}
+
+// The URL is the screen, so the browser's own back button has to move between
+// them. Without this it would change the address and leave the page showing
+// the screen it was already on.
+window.addEventListener('popstate', () => void route());
+
+async function audits(): Promise<void> {
+  if (backend === null) return;
+  renderAudits(host, await fetchWalks(backend), auditHandlers);
+}
+
+const auditHandlers = {
+  open: (walk: WalkID) => go(`walk=${encodeURIComponent(walk)}`),
+  compose: () => renderNewAudit(host, auditHandlers),
+  create: (walk: WalkID) => void createAudit(walk),
+  cancel: () => void audits(),
+};
+
+async function createAudit(walk: WalkID): Promise<void> {
+  if (backend === null) return;
+  await createWalk(backend, walk);
+  // Straight to its shelf list, because an audit that covers nothing is not
+  // finished being created.
+  go(`walk=${encodeURIComponent(walk)}`);
+}
+
+async function shelves(walk: WalkID): Promise<void> {
+  const here = backend;
+  if (here === null) return;
+  const [walks, known] = await Promise.all([fetchWalks(here), fetchLocations(here)]);
+  const audit = walks.find((candidate) => candidate.id === walk);
+  if (audit === undefined) return audits();
+
+  renderShelves(host, audit, known, {
+    walk: (location) =>
+      go(`walk=${encodeURIComponent(walk)}&location=${encodeURIComponent(location)}`),
+    add: (id, orientation) => void change(walk, () => addLocation(here, walk, { id, orientation })),
+    remove: (location) => void change(walk, () => removeLocation(here, walk, location)),
+    back: () => go(''),
+  });
+}
+
+async function change(walk: WalkID, edit: () => Promise<void>): Promise<void> {
+  await edit();
+  await shelves(walk);
 }
 
 async function open(walk: WalkID, location: LocationID): Promise<void> {
@@ -243,7 +308,11 @@ function complete(walk: WalkID, location: LocationID, walked: readonly AssetTag[
     el('p', { class: 'empty' }, 'Anything unaccounted for is settled audit-wide, after every shelf is in.'),
     // A horizontal stack is walked with the same reducer; all that differs is
     // what happens at the end, because Algorithm 2's mechanism is the paper.
-    button('Print QR sheets for this stack', () => offerSheets(walk, location, walked), 'primary wide'),
+    button('Print QR sheets for this stack', () => offerSheets(walk, location, walked), 'primary'),
+    // The fixture has no audit behind it and so nowhere to go back to.
+    backend === null
+      ? ''
+      : button('Back to shelves', () => go(`walk=${encodeURIComponent(walk)}`), 'finish'),
   );
 }
 

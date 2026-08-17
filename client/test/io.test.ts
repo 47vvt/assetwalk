@@ -10,8 +10,10 @@ import {
   BoundaryError,
   parseConfig,
   parseInstanceURL,
+  parseLocations,
   parsePositions,
   parseRoster,
+  parseWalks,
 } from '../io/parse.js';
 
 test('a well-formed history parses into positions', () => {
@@ -88,4 +90,43 @@ test('base64url drops padding and both URL-unsafe characters', () => {
   assert.equal(base64url(new Uint8Array([255, 255, 255])), '____');
   assert.equal(base64url(new Uint8Array([251, 255, 191])), '-_-_');
   assert.equal(base64url(new Uint8Array([1])), 'AQ');
+});
+
+test('audits parse with the shelves they cover', () => {
+  const walks = parseWalks([
+    {
+      id: 'walk-2026-08',
+      locations: [
+        { id: 'BAY-A3', orientation: 'vertical', walked: true },
+        { id: 'STACK-C7', orientation: 'horizontal', walked: false },
+      ],
+    },
+    { id: 'walk-2026-09', locations: [] },
+  ]);
+
+  assert.equal(walks.length, 2);
+  assert.equal(walks[0]?.locations[0]?.walked, true);
+  assert.equal(walks[0]?.locations[1]?.orientation, 'horizontal');
+  // An audit that covers nothing yet is normal, not malformed: it is the one
+  // somebody has just created and is about to add shelves to.
+  assert.deepEqual(walks[1]?.locations, []);
+});
+
+test('an unknown orientation stops the walk rather than guessing', () => {
+  // Orientation decides whether a shelf is walked by sticky note or by printed
+  // QR sheet. Defaulting it would silently run the wrong algorithm.
+  assert.throws(() => parseLocations([{ id: 'BAY-A3', orientation: 'diagonal', walked: false }]));
+  assert.throws(() => parseLocations([{ id: 'BAY-A3', walked: false }]));
+  try {
+    parseLocations([{ id: 'BAY-A3', orientation: 'sideways', walked: false }]);
+    assert.ok(false, 'should have thrown');
+  } catch (error) {
+    assert.ok(error instanceof BoundaryError);
+    assert.match(error.message, /locations\[0\]\.orientation/);
+  }
+});
+
+test('a malformed shelf name never reaches a request path', () => {
+  assert.throws(() => parseLocations([{ id: '../etc', orientation: 'vertical', walked: false }]));
+  assert.throws(() => parseWalks([{ id: '', locations: [] }]));
 });

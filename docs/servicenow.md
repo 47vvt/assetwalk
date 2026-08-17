@@ -69,6 +69,24 @@ not found", and reconciliation is a report rather than a workflow — nobody is
 asked to click "removed", least of all the person who walked the shelf an hour
 ago.
 
+### `GET /api/x_assetwalk/walks`, `POST /api/x_assetwalk/walks`
+
+The audits and the shelves each covers. Creating an audit is a platform act
+here, not a client one: an `asset_audit` record is what pre-populates the m2m
+roster, so it cannot be faked by writing rows.
+
+### `POST` / `DELETE /api/x_assetwalk/walks/locations`
+
+Which shelves an audit covers. `POST` takes `{audit, location, orientation}`
+and creates the `u_audit_location` row if the site has not seen that shelf.
+
+`DELETE` takes `?audit=&location=` and **must remove the coverage only.** The
+`u_audit_location` row and its positions have to survive: a shelf dropped from
+an audit has not been dismantled, and it can be added to another audit with its
+recorded order intact. Keeping the catalogue and the coverage as two separate
+things is what makes that true — the contract suite has a test that fails if
+they are collapsed into one.
+
 ### `GET /api/x_assetwalk/shelves?audit=<id>`
 
 Returns the shelf results committed to this audit, so cross-shelf

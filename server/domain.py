@@ -38,6 +38,28 @@ class RosterEntry(BaseModel):
     location: Ident | None = None
 
 
+class Location(BaseModel):
+    """A shelf or a bay — one run the auditor walks end to end.
+
+    ``orientation`` decides which algorithm applies to it: a vertical shelf is
+    walked by sticky note, a horizontal stack by printed QR sheet. It is a
+    property of how the devices physically sit, not a preference.
+    """
+
+    id: Ident
+    orientation: Annotated[str, Field(pattern="^(vertical|horizontal)$")] = "vertical"
+    # Whether this walk has already recorded this location. Meaningless in the
+    # catalogue of every known location, which is why it defaults to false.
+    walked: bool = False
+
+
+class Walk(BaseModel):
+    """One audit: a set of locations to be walked."""
+
+    id: Ident
+    locations: list[Location] = Field(default_factory=list)
+
+
 class ShelfResult(BaseModel):
     """One walk of one shelf, as the client's reducer left it.
 

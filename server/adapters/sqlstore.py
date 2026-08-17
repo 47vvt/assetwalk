@@ -11,7 +11,7 @@ The schema models the AssetWalk domain, not ServiceNow's.
 import json
 import sqlite3
 
-from domain import Position, RosterEntry, Sheet, ShelfResult
+from domain import Location, Position, RosterEntry, Sheet, ShelfResult, Walk
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS walk (
@@ -27,11 +27,12 @@ CREATE TABLE IF NOT EXISTS position (
     asset TEXT NOT NULL,
     PRIMARY KEY (location, sequence)
 );
-CREATE TABLE IF NOT EXISTS roster_entry (
+-- Which locations an audit covers. Removing a row drops the shelf from the
+-- audit and leaves the shelf and its history alone.
+CREATE TABLE IF NOT EXISTS walk_location (
     walk TEXT NOT NULL REFERENCES walk(id),
-    asset TEXT NOT NULL,
-    location TEXT,
-    PRIMARY KEY (walk, asset)
+    location TEXT NOT NULL REFERENCES location(id),
+    PRIMARY KEY (walk, location)
 );
 -- One row per shelf per walk: re-walking a shelf replaces its result rather
 -- than appending, so reconciliation always sees the auditor's latest look.
@@ -62,9 +63,63 @@ class SqlStore:
         self.db.executescript(SCHEMA)
         self.db.commit()
 
-    def roster(self, walk_id: str) -> list[RosterEntry]:
+    def walks(self) -> list[Walk]:
         rows = self.db.execute(
-            "SELECT asset, location FROM roster_entry WHERE walk = ? ORDER BY asset",
+            "SELECT w.id, l.id, l.orientation, "
+            "  EXISTS(SELECT 1 FROM shelf_result s WHERE s.walk = w.id AND s.location = l.id) "
+            "FROM walk w "
+            # LEFT JOIN so an audit that covers nothing yet still appears —
+            # that is exactly the audit somebody has just created and is about
+            # to add shelves to.
+            "LEFT JOIN walk_location wl ON wl.walk = w.id "
+            "LEFT JOIN location l ON l.id = wl.location "
+            "ORDER BY w.id, l.id"
+        )
+        walks: dict[str, list[Location]] = {}
+        for walk, location, orientation, walked in rows:
+            covered = walks.setdefault(walk, [])
+            if location is not None:
+                covered.append(
+                    Location(id=location, orientation=orientation, walked=bool(walked))
+                )
+        return [Walk(id=walk, locations=covered) for walk, covered in walks.items()]
+
+    def create_walk(self, walk_id: str) -> None:
+        with self.db:
+            self.db.execute("INSERT OR IGNORE INTO walk (id) VALUES (?)", (walk_id,))
+
+    def locations(self) -> list[Location]:
+        rows = self.db.execute("SELECT id, orientation FROM location ORDER BY id")
+        return [Location(id=id_, orientation=orientation) for id_, orientation in rows]
+
+    def add_location(self, walk_id: str, location: Location) -> None:
+        with self.db:
+            self.db.execute("INSERT OR IGNORE INTO walk (id) VALUES (?)", (walk_id,))
+            self.db.execute(
+                "INSERT OR IGNORE INTO location (id, orientation) VALUES (?, ?)",
+                (location.id, location.orientation),
+            )
+            self.db.execute(
+                "INSERT OR IGNORE INTO walk_location (walk, location) VALUES (?, ?)",
+                (walk_id, location.id),
+            )
+
+    def remove_location(self, walk_id: str, location_id: str) -> None:
+        with self.db:
+            self.db.execute(
+                "DELETE FROM walk_location WHERE walk = ? AND location = ?",
+                (walk_id, location_id),
+            )
+
+    def roster(self, walk_id: str) -> list[RosterEntry]:
+        # Derived, not stored. Every asset with a position in a location this
+        # audit covers is an asset the audit expects to find — which is what a
+        # roster is. A second copy could only disagree, and adding a shelf to
+        # an audit would then have to remember to update it.
+        rows = self.db.execute(
+            "SELECT DISTINCT p.asset, p.location FROM position p "
+            "JOIN walk_location wl ON wl.location = p.location "
+            "WHERE wl.walk = ? ORDER BY p.asset",
             (walk_id,),
         )
         return [RosterEntry(asset=asset, location=location) for asset, location in rows]
@@ -160,27 +215,19 @@ class SqlStore:
             for id_, walk, location, printed_at, members in rows
         ]
 
-    # Used by the CSV importer and the tests to set up a walk. Not part of the
-    # Store protocol: ServiceNow owns its own roster and never needs this.
+    # Used by the CSV importer and the tests to set up a walk from existing
+    # positional history. Not part of the Store protocol: ServiceNow owns its
+    # own audits and never needs this.
     def seed(
         self,
         walk_id: str,
-        roster: list[RosterEntry],
         history: list[Position],
         orientation: str = "vertical",
     ) -> None:
+        for position in {p.location for p in history}:
+            self.add_location(walk_id, Location(id=position, orientation=orientation))
         with self.db:
-            self.db.execute("INSERT OR IGNORE INTO walk (id) VALUES (?)", (walk_id,))
-            for entry in roster:
-                self.db.execute(
-                    "INSERT OR REPLACE INTO roster_entry (walk, asset, location) VALUES (?, ?, ?)",
-                    (walk_id, entry.asset, entry.location),
-                )
             for position in history:
-                self.db.execute(
-                    "INSERT OR IGNORE INTO location (id, orientation) VALUES (?, ?)",
-                    (position.location, orientation),
-                )
                 self.db.execute(
                     "INSERT OR REPLACE INTO position (location, sequence, asset) VALUES (?, ?, ?)",
                     (position.location, position.sequence, position.asset),

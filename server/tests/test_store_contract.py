@@ -13,7 +13,7 @@ import pytest
 
 from adapters.servicenow import ServiceNowStore
 from adapters.sqlstore import SqlStore
-from domain import Position, RosterEntry, Sheet, ShelfResult
+from domain import Location, Position, Sheet, ShelfResult
 
 BAY = "BAY-A3"
 WALK = "walk-2026-08"
@@ -40,6 +40,12 @@ class Instance:
     def __init__(self) -> None:
         self.roster: list[str] = []
         self.positions: list[tuple[str, int, str]] = []
+        # u_audit_location is the site's catalogue of shelves; coverage is
+        # which audit covers which. Two things, because a shelf outlives the
+        # audits that walk it — dropping one from an audit must not dismantle
+        # it, and the scoped app has to keep them apart for that to hold.
+        self.locations: dict[str, str] = {}
+        self.coverage: dict[str, set[str]] = {}
         self.shelf_results: dict[str, dict] = {}
         self.sheets: list[dict] = []
         self.scans: list[dict] = []
@@ -60,6 +66,45 @@ class Instance:
                     if location == wanted
                 ]
             )
+        if request.method == "GET" and path.endswith("/u_audit_location"):
+            return self._ok(
+                [
+                    {"u_location": location, "u_orientation": orientation}
+                    for location, orientation in sorted(self.locations.items())
+                ]
+            )
+        if request.method == "GET" and path.endswith("/walks"):
+            return self._ok(
+                [
+                    {
+                        "id": audit,
+                        "locations": [
+                            {
+                                "id": location,
+                                "orientation": self.locations[location],
+                                "walked": any(
+                                    r["walk"] == audit and r["location"] == location
+                                    for r in self.shelf_results.values()
+                                ),
+                            }
+                            for location in sorted(covered)
+                        ],
+                    }
+                    for audit, covered in sorted(self.coverage.items())
+                ]
+            )
+        if request.method == "POST" and path.endswith("/walks"):
+            self.coverage.setdefault(json.loads(request.content)["audit"], set())
+            return self._ok([])
+        if request.method == "POST" and path.endswith("/walks/locations"):
+            body = json.loads(request.content)
+            self.locations.setdefault(body["location"], body["orientation"])
+            self.coverage.setdefault(body["audit"], set()).add(body["location"])
+            return self._ok([])
+        if request.method == "DELETE" and path.endswith("/walks/locations"):
+            audit = request.url.params.get("audit", "")
+            self.coverage.get(audit, set()).discard(request.url.params.get("location", ""))
+            return self._ok([])
         if request.method == "GET" and path.endswith("/u_audit_sheet"):
             return self._ok(self.sheets)
         if request.method == "POST" and path.endswith("/u_audit_sheet"):
@@ -115,16 +160,14 @@ def store(request, tmp_path):
     """Both implementations, seeded to the same starting state."""
     if request.param == "sqlite":
         made = SqlStore(str(tmp_path / "test.db"))
-        made.seed(
-            WALK,
-            [RosterEntry(asset=tag, location=BAY) for tag in SHELF],
-            positions(BAY, SHELF),
-        )
+        made.seed(WALK, positions(BAY, SHELF))
         return made
 
     made, instance = servicenow_store()
     instance.roster = list(SHELF)
     instance.positions = [(BAY, i, tag) for i, tag in enumerate(SHELF)]
+    instance.locations = {BAY: "vertical"}
+    instance.coverage = {WALK: {BAY}}
     return made
 
 
@@ -245,3 +288,61 @@ def test_the_servicenow_adapter_carries_the_callers_own_token():
     )
     store.roster(WALK)
     assert seen["auth"] == "Bearer auditor-token"
+
+
+def test_a_new_audit_starts_empty_and_is_listed(store):
+    store.create_walk("walk-new")
+
+    listed = {walk.id: walk for walk in store.walks()}
+    assert "walk-new" in listed
+    # It covers nothing until shelves are added, and that is a normal state to
+    # be in — it is the audit somebody has just created.
+    assert listed["walk-new"].locations == []
+
+
+def test_a_shelf_added_to_an_audit_appears_with_its_orientation(store):
+    store.create_walk("walk-new")
+    store.add_location("walk-new", Location(id="BAY-Z9", orientation="horizontal"))
+
+    covered = {walk.id: walk for walk in store.walks()}["walk-new"].locations
+    assert [(c.id, c.orientation) for c in covered] == [("BAY-Z9", "horizontal")]
+    # Orientation is not decoration: it decides whether this shelf is walked by
+    # sticky note or by printed QR sheet.
+    assert "BAY-Z9" in [location.id for location in store.locations()]
+
+
+def test_adding_an_existing_shelf_brings_its_history_with_it(store):
+    store.create_walk("walk-second")
+    store.add_location("walk-second", Location(id=BAY, orientation="vertical"))
+
+    # The point of picking a shelf from the catalogue rather than typing a new
+    # name: the second audit walks against what the first one recorded.
+    assert [position.asset for position in store.history(BAY)] == SHELF
+    assert sorted(entry.asset for entry in store.roster("walk-second")) == sorted(SHELF)
+
+
+def test_a_walked_shelf_is_marked_walked(store):
+    before = {c.id: c.walked for c in _covered(store, WALK)}
+    assert before[BAY] is False
+
+    store.commit(
+        ShelfResult(walk=WALK, location=BAY, confirmed=[SHELF[0]], unresolved=SHELF[1:]),
+        "key-walked",
+    )
+
+    after = {c.id: c.walked for c in _covered(store, WALK)}
+    assert after[BAY] is True
+
+
+def test_removing_a_shelf_leaves_the_shelf_and_its_history_alone(store):
+    store.remove_location(WALK, BAY)
+
+    assert [c.id for c in _covered(store, WALK)] == []
+    # Dropped from the audit, not dismantled: the recorded order survives and
+    # the shelf can be added to another audit.
+    assert [position.asset for position in store.history(BAY)] == SHELF
+    assert BAY in [location.id for location in store.locations()]
+
+
+def _covered(store, walk_id: str) -> list[Location]:
+    return next(walk.locations for walk in store.walks() if walk.id == walk_id)

@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from adapters.servicenow import ServiceNowStore
 from adapters.sqlstore import SqlStore
-from domain import Position, Reconciliation, RosterEntry, Sheet, ShelfResult
+from domain import Location, Position, Reconciliation, RosterEntry, Sheet, ShelfResult, Walk
 from reconcile import reconcile
 from store import Store
 
@@ -46,6 +46,45 @@ def store_for(authorization: Annotated[str | None, Header()] = None) -> Store:
 
 
 Bound = Annotated[Store, Depends(store_for)]
+
+
+@app.get("/api/walks")
+def walks(store: Bound) -> list[Walk]:
+    """Every audit and the locations it covers.
+
+    Names and orientations only. The device needs this to let someone pick a
+    shelf, and it is nothing like the positional history that §5 keeps off it.
+    """
+    return store.walks()
+
+
+@app.post("/api/walks", status_code=204)
+def create_walk(walk: Walk, store: Bound) -> Response:
+    store.create_walk(walk.id)
+    for location in walk.locations:
+        store.add_location(walk.id, location)
+    return Response(status_code=204)
+
+
+@app.get("/api/locations")
+def catalogue(store: Bound) -> list[Location]:
+    """Every location the site knows about, so adding a shelf to a second
+    audit is a choice from a list rather than a name typed from memory."""
+    return store.locations()
+
+
+@app.post("/api/walks/{walk_id}/locations", status_code=204)
+def add_location(walk_id: str, location: Location, store: Bound) -> Response:
+    store.add_location(walk_id, location)
+    return Response(status_code=204)
+
+
+@app.delete("/api/walks/{walk_id}/locations/{location_id}", status_code=204)
+def remove_location(walk_id: str, location_id: str, store: Bound) -> Response:
+    """Takes the shelf out of this audit. It is not a deletion: the shelf and
+    its recorded order survive, and can be added to another audit."""
+    store.remove_location(walk_id, location_id)
+    return Response(status_code=204)
 
 
 @app.get("/api/walks/{walk_id}/roster")

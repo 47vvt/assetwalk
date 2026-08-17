@@ -9,25 +9,23 @@ import csv
 from typing import TextIO
 
 from adapters.sqlstore import SqlStore
-from domain import Position, RosterEntry
+from domain import Position
 from reconcile import reconcile
 
 
 def import_walk(store: SqlStore, walk_id: str, rows: TextIO) -> int:
-    """Read ``location,sequence,asset`` and seed both the shelf histories and
-    the roster. Every asset that has a position is expected to be found, which
-    is what a roster is."""
+    """Read ``location,sequence,asset`` and seed the shelf histories.
+
+    The roster follows from them: every asset with a position in a location
+    this audit covers is an asset the audit expects to find.
+    """
     history = [
         Position(
             location=row["location"], sequence=int(row["sequence"]), asset=row["asset"]
         )
         for row in csv.DictReader(rows)
     ]
-    roster = [
-        RosterEntry(asset=position.asset, location=position.location)
-        for position in history
-    ]
-    store.seed(walk_id, roster, history)
+    store.seed(walk_id, history)
     return len(history)
 
 

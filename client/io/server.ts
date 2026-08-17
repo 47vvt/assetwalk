@@ -7,7 +7,8 @@
 // and killed on the walk back to a desk. The queue holds confirmations, which
 // are small and are not history.
 
-import { parsePositions, parseRoster } from './parse.js';
+import { parseLocations, parsePositions, parseRoster, parseWalks } from './parse.js';
+import type { Location, Walk } from './parse.js';
 import type { Position, RosterEntry } from '../core/types.js';
 import type { Sheet } from '../core/sheet.js';
 import type { ShelfResult } from '../core/walk.js';
@@ -145,4 +146,58 @@ function read(): Pending[] {
 
 function write(queue: readonly Pending[]): void {
   localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+}
+
+export async function fetchWalks(backend: Backend): Promise<Walk[]> {
+  return parseWalks(await get(backend, '/walks'));
+}
+
+// Every location the site knows about, so adding a shelf to a second audit is
+// a choice from a list rather than a name typed from memory.
+export async function fetchLocations(backend: Backend): Promise<Location[]> {
+  return parseLocations(await get(backend, '/locations'));
+}
+
+// Audit administration is not queued. The offline queue exists for
+// confirmations recorded in a comms room with no signal; setting an audit up
+// happens at a desk, and silently deferring it would leave someone staring at
+// a shelf list that does not yet exist anywhere.
+export async function createWalk(backend: Backend, walk: string): Promise<void> {
+  await send(backend, 'POST', '/walks', { id: walk, locations: [] });
+}
+
+export async function addLocation(
+  backend: Backend,
+  walk: string,
+  location: { id: string; orientation: string },
+): Promise<void> {
+  await send(backend, 'POST', `/walks/${encodeURIComponent(walk)}/locations`, location);
+}
+
+export async function removeLocation(
+  backend: Backend,
+  walk: string,
+  location: string,
+): Promise<void> {
+  await send(
+    backend,
+    'DELETE',
+    `/walks/${encodeURIComponent(walk)}/locations/${encodeURIComponent(location)}`,
+    null,
+  );
+}
+
+async function send(
+  backend: Backend,
+  method: string,
+  path: string,
+  body: unknown,
+): Promise<void> {
+  const response = await fetch(`${backend.base}${path}`, {
+    method,
+    headers: headers(backend, body === null ? {} : { 'content-type': 'application/json' }),
+    credentials: 'omit',
+    ...(body === null ? {} : { body: JSON.stringify(body) }),
+  });
+  if (!response.ok) throw new Error(`${method} ${path}: ${response.status}`);
 }

@@ -15,7 +15,7 @@ Two things about the integration drive the whole design:
 
 import httpx
 
-from domain import Position, RosterEntry, Sheet, ShelfResult
+from domain import Location, Position, RosterEntry, Sheet, ShelfResult, Walk
 
 # HAM Pro column names vary by version, and the display label is not the column
 # name. Confirm these against sys_dictionary filtered to the table before any
@@ -30,6 +30,7 @@ M2M_SCANNED = "scanned"
 # them; only this adapter does.
 POSITION_TABLE = "u_audit_position"
 SHEET_TABLE = "u_audit_sheet"
+LOCATION_TABLE = "u_audit_location"
 
 # One scripted endpoint on the instance takes a whole batch: it resolves tags
 # against alm_hardware, updates the m2m rows, and enforces validation in one
@@ -38,6 +39,8 @@ SHEET_TABLE = "u_audit_sheet"
 # available — it asks nobody to trust this repository.
 SCAN_ENDPOINT = "/api/x_assetwalk/scan"
 SHELVES_ENDPOINT = "/api/x_assetwalk/shelves"
+WALKS_ENDPOINT = "/api/x_assetwalk/walks"
+COVERAGE_ENDPOINT = "/api/x_assetwalk/walks/locations"
 
 TIMEOUT = httpx.Timeout(30.0)
 
@@ -60,6 +63,44 @@ class ServiceNowStore:
             headers={"Authorization": bearer, "Accept": "application/json"},
             timeout=TIMEOUT,
         )
+
+    # Audit administration. The scoped app owns which audits exist and which
+    # locations each covers, because on this side an audit is an asset_audit
+    # record whose creation is what pre-populates the roster — that is not
+    # something a client can fake by writing rows.
+    def walks(self) -> list[Walk]:
+        response = self.client.get(WALKS_ENDPOINT)
+        response.raise_for_status()
+        return [Walk(**walk) for walk in response.json().get("result", [])]
+
+    def create_walk(self, walk_id: str) -> None:
+        self.client.post(WALKS_ENDPOINT, json={"audit": walk_id}).raise_for_status()
+
+    def locations(self) -> list[Location]:
+        rows = self._table(LOCATION_TABLE, sysparm_fields="u_location,u_orientation")
+        return [
+            Location(id=_display(row["u_location"]), orientation=row["u_orientation"])
+            for row in rows
+        ]
+
+    def add_location(self, walk_id: str, location: Location) -> None:
+        self.client.post(
+            COVERAGE_ENDPOINT,
+            json={
+                "audit": walk_id,
+                "location": location.id,
+                "orientation": location.orientation,
+            },
+        ).raise_for_status()
+
+    def remove_location(self, walk_id: str, location_id: str) -> None:
+        # Drops the coverage row only. The location and its positions stay: a
+        # shelf taken out of an audit has not been dismantled.
+        self.client.request(
+            "DELETE",
+            COVERAGE_ENDPOINT,
+            params={"audit": walk_id, "location": location_id},
+        ).raise_for_status()
 
     def roster(self, walk_id: str) -> list[RosterEntry]:
         rows = self._table(

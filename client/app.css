@@ -391,3 +391,57 @@ button.quiet {
   border-color: rgba(255, 255, 255, 0.7);
   background: rgba(0, 0, 0, 0.45);
 }
+
+/* The audit and shelf screens are read at a desk rather than glanced at in a
+   rack aisle, so their rows lead with a name instead of a tag. */
+.entry strong {
+  font-size: 1.4rem;
+  display: block;
+}
+
+.entry small {
+  opacity: 0.6;
+}
+
+.entry .row {
+  display: block;
+}
+
+/* A shelf and the control that takes it out of the audit. */
+.shelf {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.shelf .entry {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.nameinput {
+  width: 100%;
+  font: inherit;
+  font-size: 1.5rem;
+  color: inherit;
+  background: transparent;
+  border: 2px solid var(--accent);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  min-height: 3.5rem;
+}
+
+.nameinput::placeholder {
+  opacity: 0.35;
+}
+
+/* The selected orientation. It is a fact about the rack, not a preference, so
+   one of the two is always chosen. */
+button.chosen {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}

@@ -9,10 +9,37 @@ the ServiceNow adapter stays honest without a live instance.
 
 from typing import Protocol
 
-from domain import Position, RosterEntry, Sheet, ShelfResult
+from domain import Location, Position, RosterEntry, Sheet, ShelfResult, Walk
 
 
 class Store(Protocol):
+    def walks(self) -> list[Walk]:
+        """Every audit, each with the locations it covers and whether each one
+        has been walked yet. Location names and orientations, not history —
+        this is the list an auditor picks from, and it stays small."""
+
+    def create_walk(self, walk_id: str) -> None:
+        """Start an audit. It covers nothing until locations are added."""
+
+    def locations(self) -> list[Location]:
+        """Every location known to the site, whatever audit it belongs to.
+
+        This is what makes adding a shelf to a second audit a choice from a
+        list rather than a name typed from memory.
+        """
+
+    def add_location(self, walk_id: str, location: Location) -> None:
+        """Put a location in this audit, creating it if the site has not seen
+        it before. Adding one that already exists brings its history with it."""
+
+    def remove_location(self, walk_id: str, location_id: str) -> None:
+        """Take a location out of this audit.
+
+        The location and its positional history survive: a shelf dropped from
+        an audit has not been dismantled, and destroying a walk's worth of
+        recorded order to correct a mis-tap would be the wrong trade.
+        """
+
     def roster(self, walk_id: str) -> list[RosterEntry]:
         """Every asset this walk expects to find, across all its locations."""
 

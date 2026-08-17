@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 import main
 from adapters.sqlstore import SqlStore
-from domain import Position, RosterEntry
+from domain import Position
 
 BAY = "BAY-A3"
 WALK = "walk-2026-08"
@@ -20,11 +20,7 @@ SHELF = [f"UOM{270000 + i:06d}" for i in range(4)]
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     store = SqlStore(str(tmp_path / "api.db"))
-    store.seed(
-        WALK,
-        [RosterEntry(asset=tag, location=BAY) for tag in SHELF],
-        [Position(location=BAY, sequence=i, asset=tag) for i, tag in enumerate(SHELF)],
-    )
+    store.seed(WALK, [Position(location=BAY, sequence=i, asset=tag) for i, tag in enumerate(SHELF)])
     monkeypatch.setattr(main, "_sqlite", store)
     return TestClient(main.app)
 
@@ -139,3 +135,38 @@ def test_a_sheet_filed_under_the_wrong_location_is_refused(client):
         }
     ]
     assert client.post(f"/api/locations/{BAY}/sheets", json=sheets).status_code == 400
+
+
+def test_audits_and_their_shelves_come_back_in_the_shape_the_client_parses(client):
+    body = client.get("/api/walks").json()
+    assert set(body[0]) == {"id", "locations"}
+    assert set(body[0]["locations"][0]) == {"id", "orientation", "walked"}
+
+
+def test_an_audit_can_be_created_and_shelves_added_and_removed(client):
+    assert client.post("/api/walks", json={"id": "walk-new", "locations": []}).status_code == 204
+
+    added = client.post(
+        "/api/walks/walk-new/locations",
+        json={"id": "STACK-C7", "orientation": "horizontal"},
+    )
+    assert added.status_code == 204
+
+    audits = {walk["id"]: walk for walk in client.get("/api/walks").json()}
+    assert [c["id"] for c in audits["walk-new"]["locations"]] == ["STACK-C7"]
+    # The catalogue is what makes adding a shelf to a second audit a choice
+    # from a list rather than a name typed from memory.
+    assert "STACK-C7" in [c["id"] for c in client.get("/api/locations").json()]
+
+    assert client.delete("/api/walks/walk-new/locations/STACK-C7").status_code == 204
+    audits = {walk["id"]: walk for walk in client.get("/api/walks").json()}
+    assert audits["walk-new"]["locations"] == []
+    # Removed from the audit, not dismantled.
+    assert "STACK-C7" in [c["id"] for c in client.get("/api/locations").json()]
+
+
+def test_a_shelf_with_a_nonsense_orientation_is_refused(client):
+    response = client.post(
+        f"/api/walks/{WALK}/locations", json={"id": "BAY-Z9", "orientation": "diagonal"}
+    )
+    assert response.status_code == 422

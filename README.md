@@ -197,17 +197,23 @@ non-blank lines:
 | Component | Budget | Actual |
 |---|---|---|
 | `client/core` — reducer, sheets, domain | ~400 | **226** |
-| `client/io/parse.ts` — validation boundary | ~50 | **65** |
+| `client/io/parse.ts` — validation boundary | ~50 | **98** |
 | `client/io/auth.ts` — PKCE | ~100 | **76** |
-| `client/io/server.ts` — fetches, offline queue | — | **105** |
+| `client/io/server.ts` — fetches, offline queue | — | **147** |
 | `client/pdf` — writer and sheet layout | ~250 | **121** |
 | `client/platform` — capability adapters | ~150 | **125** |
-| `client/ui` + `main.ts` + demo fixture | — | **526** |
-| `server` — the whole backend | ~600 | **561** |
-| Tests (client 506, server 417) | — | **923** |
+| `client/ui` + `main.ts` + demo fixture | — | **756** |
+| `server` — the whole backend | ~600 | **681** |
+| Tests (client 539, server 507) | — | **1046** |
 
 More test code than application code in the parts where being wrong is silent.
 That is deliberate.
+
+The backend is over its budget. §6 sized it for three jobs — history slices,
+reconciliation, and the ServiceNow commit — and audit administration is a
+fourth that was not in that scope. Worth knowing rather than quietly
+rebaselining: the number that matters is whether `/client/core`, where being
+wrong is silent, is still small. It is.
 
 ---
 
@@ -235,6 +241,27 @@ npm run check                   # build, then the client suite (node:test)
 cd server && uv run pytest -q   # the backend suite
 ```
 
+### Setting an audit up
+
+An audit is a set of shelves to walk. The app manages them:
+
+- **Audits** lists every audit with how many of its shelves have been walked.
+- **New audit** takes a name and nothing else — the shelves it covers are added
+  next, and can change while it is in progress.
+- **Shelves in this audit** is where they are added and removed. Shelves the
+  site already knows are offered as a list, so putting one in a second audit is
+  a choice rather than a name typed from memory; a shelf the site has not seen
+  is created here, with its orientation, because *vertical or horizontal is a
+  fact about how the devices sit* and it decides which of the two algorithms
+  the walk uses. Nothing later can work it out.
+- **Remove** takes a shelf out of that audit. It is not a deletion: the shelf
+  and its recorded order survive and can be added to another audit, which is
+  why it needs no confirmation step.
+
+The URL is the screen — `?walk=…` is an audit's shelves, `?walk=…&location=…`
+is a walk in progress — so a walk survives a reload, a shelf can be linked to,
+and the browser's back button works.
+
 ### A whole audit, standalone — and the variance report
 
 Reconciliation needs *every* shelf in the walk, so the single-shelf fixture
@@ -248,8 +275,8 @@ cd server
 uv sync
 printf '{ "backend": "/api" }\n' > ../client/config.json   # no instance,
                                                           # no sign-in
-uv run python cli.py import walk-demo example-walk.csv
-uv run uvicorn main:app --port 8000
+uv run python cli.py import walk-demo example-walk.csv   # or skip this and
+uv run uvicorn main:app --port 8000                     # create one in the app
 ```
 
 The backend serves the client too, so everything is one origin and

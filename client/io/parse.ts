@@ -94,3 +94,44 @@ export function parseInstanceURL(raw: string): URL {
   }
   return url;
 }
+
+export interface Location {
+  readonly id: LocationID;
+  readonly orientation: 'vertical' | 'horizontal';
+  readonly walked: boolean;
+}
+
+export interface Walk {
+  readonly id: WalkID;
+  readonly locations: readonly Location[];
+}
+
+function orientation(record: unknown, path: string): 'vertical' | 'horizontal' {
+  const value = str(record, path, 'orientation');
+  // Not decoration: it decides whether this shelf is walked by sticky note or
+  // by printed QR sheet, so an unrecognised value must not silently become one.
+  if (value === 'vertical' || value === 'horizontal') return value;
+  return fail(`${path}.orientation`, value);
+}
+
+function location(entry: unknown, path: string): Location {
+  const walked = field(entry, path, 'walked');
+  return {
+    id: place(entry, path, 'id'),
+    orientation: orientation(entry, path),
+    walked: walked === true,
+  };
+}
+
+export function parseLocations(raw: unknown): Location[] {
+  return list(raw, 'locations').map((entry, i) => location(entry, `locations[${i}]`));
+}
+
+export function parseWalks(raw: unknown): Walk[] {
+  return list(raw, 'walks').map((entry, i) => ({
+    id: walkID(str(entry, `walks[${i}]`, 'id')) ?? fail(`walks[${i}].id`, entry),
+    locations: list(field(entry, `walks[${i}]`, 'locations'), `walks[${i}].locations`).map(
+      (covered, j) => location(covered, `walks[${i}].locations[${j}]`),
+    ),
+  }));
+}
