@@ -44,6 +44,12 @@ Two primitives, and nothing else:
    it. There is no second screen and no menu of what the audit already knows:
    one field, and the algorithm decides.
 
+   The site prefix is a label rather than something to type — it is identical
+   on every device in the building — and it is derived from the walk's own tags
+   rather than configured. What is left goes in one cell per digit, so the
+   auditor can check what they entered against a handwritten note at a glance
+   instead of reading back a run of identical-looking numerals.
+
 | | Where it is found | What it means |
 |---|---|---|
 | 1 | In the pile | Moved within this shelf. Restore and confirm. |
@@ -171,15 +177,15 @@ non-blank lines:
 
 | Component | Budget | Actual |
 |---|---|---|
-| `client/core` — reducer, sheets, domain | ~400 | **206** |
+| `client/core` — reducer, sheets, domain | ~400 | **225** |
 | `client/io/parse.ts` — validation boundary | ~50 | **65** |
 | `client/io/auth.ts` — PKCE | ~100 | **76** |
 | `client/io/server.ts` — fetches, offline queue | — | **105** |
 | `client/pdf` — writer and sheet layout | ~250 | **121** |
 | `client/platform` — capability adapters | ~150 | **125** |
-| `client/ui` + `main.ts` + demo fixture | — | **392** |
+| `client/ui` + `main.ts` + demo fixture | — | **426** |
 | `server` — the whole backend | ~600 | **568** |
-| Tests (client 414, server 430) | — | **844** |
+| Tests (client 448, server 430) | — | **878** |
 
 More test code than application code in the parts where being wrong is silent.
 That is deliberate.

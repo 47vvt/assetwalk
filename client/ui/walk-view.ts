@@ -7,7 +7,8 @@
 // the auditor being told any of it. They are holding a laptop, not reading a
 // data model.
 
-import { assetTag } from '../core/types.js';
+import { assetTag, tagShape } from '../core/types.js';
+import type { TagShape } from '../core/types.js';
 import { windowOf } from '../core/walk.js';
 import type { Event, State } from '../core/walk.js';
 import { button, el, input, replace, tagLabel } from './dom.js';
@@ -18,9 +19,12 @@ import { button, el, input, replace, tagLabel } from './dom.js';
 // starts classifying devices by how confused the auditor seems.
 const STALL_LIMIT = 3;
 
-// Four letters of site prefix plus ten digits is the widest tag the domain
-// allows, so nothing longer can be a typo worth keeping.
-const MAX_TAG = 14;
+// The screen is rebuilt on every event, which destroys the field along with
+// everything else. An auditor working through a run of unrecognised devices
+// types one tag after another, so the field asks for itself back after a
+// submission rather than making them tap it again.
+const FIELD_ID = 'tag-entry';
+let refocus = false;
 
 export interface WalkHandlers {
   readonly dispatch: (event: Event) => void;
@@ -78,7 +82,7 @@ export function renderWalk(
       ),
     ),
 
-    tagEntry(handlers),
+    tagEntry(tagShape(walkTags(state)), handlers),
 
     el(
       'nav',
@@ -91,50 +95,104 @@ export function renderWalk(
       button('Finish shelf', handlers.finish, 'finish wide'),
     ),
   );
+
+  if (refocus) {
+    refocus = false;
+    window.document.getElementById(FIELD_ID)?.focus();
+  }
+}
+
+// Everything this walk knows a tag can look like: the shelf as it was, plus
+// the assets the audit expects to find anywhere.
+function walkTags(state: State): string[] {
+  return [...state.roster, ...state.history.map((position) => position.asset)];
 }
 
 // One field, no separate screen and no list of what the audit already knows.
 // Whether the typed tag is a device from the last walk or one nobody has seen
 // before is the reducer's problem, and showing the auditor the shelf's history
 // only invites them to answer a question the algorithm exists to avoid asking.
-function tagEntry(handlers: WalkHandlers): HTMLElement {
+//
+// The prefix is a label, not something to type — it is identical on every
+// device in the building. What is left is the digits, in one cell each, so the
+// auditor can check what they have entered against a handwritten note at a
+// glance instead of reading back a run of identical-looking numerals.
+function tagEntry(shape: TagShape, handlers: WalkHandlers): HTMLElement {
+  const cells = Array.from({ length: shape.digits }, () => el('span', { class: 'cell' }));
+  const caret = el('span', { class: 'caret' });
+
+  // One real input behind the cells rather than one input per cell. The
+  // browser then handles the caret, backspace, paste, autofill and every
+  // mobile keyboard for free, and there is a single value to validate instead
+  // of a row of fragments to reassemble.
   const field = input({
-    class: 'tagfield',
+    id: FIELD_ID,
+    class: 'digits',
     type: 'text',
-    inputmode: 'text',
+    inputmode: 'numeric',
     autocomplete: 'off',
-    autocapitalize: 'characters',
     spellcheck: 'false',
-    placeholder: 'UOM000000',
-    'aria-label': 'Asset tag from the note',
+    'aria-label': `Asset tag digits after ${shape.prefix || 'the prefix'}`,
   });
-  const submit = button('Enter', () => send(), 'primary');
+
+  const submit = button('Enter', () => send(), 'primary wide');
+  const track = el('div', { class: 'cells' }, caret, ...cells, field);
+  track.style.setProperty('--n', String(shape.digits));
+
+  const show = (): void => {
+    const typed = field.value;
+    cells.forEach((cell, i) => {
+      cell.textContent = typed[i] ?? '';
+      cell.classList.toggle('filled', typed[i] !== undefined);
+    });
+    // The caret is a single element moved with a transform, so it travels
+    // between cells rather than blinking from one to the next.
+    caret.style.setProperty('--i', String(Math.min(typed.length, shape.digits - 1)));
+    caret.classList.toggle('done', typed.length >= shape.digits);
+    submit.toggleAttribute('disabled', tagOf(shape, typed) === null);
+  };
 
   const send = (): void => {
-    const tag = assetTag(field.value);
+    const tag = tagOf(shape, field.value);
     if (tag === null) return;
     field.value = '';
-    submit.setAttribute('disabled', '');
+    show();
+    // The auditor is mid-run and about to type another one.
+    refocus = true;
     handlers.dispatch({ kind: 'IDENTIFY', tag });
   };
 
   field.addEventListener('input', () => {
-    // Nothing that cannot appear in an asset tag is allowed to survive a
-    // keystroke, so the field can only ever hold a prefix of a real tag.
-    const cleaned = field.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, MAX_TAG);
+    // Nothing but digits survives a keystroke: the prefix is already on screen
+    // and there are exactly this many places to put a numeral.
+    const cleaned = field.value.replace(/[^0-9]/g, '').slice(0, shape.digits);
     if (cleaned !== field.value) field.value = cleaned;
-    submit.toggleAttribute('disabled', assetTag(cleaned) === null);
+    show();
   });
-
   field.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') send();
   });
+  field.addEventListener('focus', () => track.classList.add('active'));
+  field.addEventListener('blur', () => track.classList.remove('active'));
 
-  submit.setAttribute('disabled', '');
+  show();
   return el(
     'section',
     { class: 'identify' },
     el('h2', { class: 'lead' }, 'Not one of these? Type the tag on its note'),
-    el('div', { class: 'field' }, field, submit),
+    el(
+      'div',
+      { class: 'field' },
+      shape.prefix === '' ? '' : el('span', { class: 'sitecode' }, shape.prefix),
+      track,
+    ),
+    // Below the cells rather than beside them, so the cells get the whole row.
+    // A numeric keyboard on iOS has no return key, so this button is the only
+    // way to submit on the device the audit actually runs on.
+    submit,
   );
+}
+
+function tagOf(shape: TagShape, typed: string): ReturnType<typeof assetTag> {
+  return assetTag(shape.prefix + typed);
 }

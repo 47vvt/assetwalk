@@ -36,6 +36,37 @@ export function digitsOf(tag: string): string {
   return digits.replace(/^0+(?=[0-9])/, '');
 }
 
+// The shape every tag in one walk shares: an alphabetic site prefix and a
+// number of digits after it.
+export interface TagShape {
+  readonly prefix: string;
+  readonly digits: number;
+}
+
+// A fleet's tags all carry the same prefix — that is what made it worth
+// printing faintly in the first place — so it is a label to read, not something
+// to type. Derived from the walk's own tags rather than configured: hard-coding
+// "UOM" here would put one site's labelling convention in the domain core.
+export function tagShape(tags: Iterable<string>): TagShape {
+  let prefix: string | null = null;
+  let digits = 0;
+  for (const tag of tags) {
+    const head = tag.replace(/[0-9].*$/, '');
+    prefix = prefix === null ? head : shared(prefix, head);
+    digits = Math.max(digits, tag.length - head.length);
+  }
+  // A walk that carries no tags at all has nothing to learn from, and the only
+  // thing the auditor can do is record a device nobody expected. Six digits is
+  // what the shortest legal tag plus room to grow looks like.
+  return { prefix: prefix ?? '', digits: digits === 0 ? 6 : digits };
+}
+
+function shared(a: string, b: string): string {
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  return a.slice(0, i);
+}
+
 // A slot in a shelf's history: this asset was at this sequence in this
 // location as of the last walk.
 export interface Position {
