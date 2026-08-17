@@ -17,6 +17,7 @@ import type { Camera } from './platform/scanner.js';
 import { DEMO_HISTORY, DEMO_LOCATION, DEMO_ROSTER, DEMO_WALK } from './demo-shelf.js';
 import { button, el, replace } from './ui/dom.js';
 import { renderSheets } from './ui/sheets-view.js';
+import { renderScan } from './ui/scan-view.js';
 import { renderWalk } from './ui/walk-view.js';
 
 const host = window.document.body;
@@ -27,7 +28,11 @@ const host = window.document.body;
 let backend: Backend | null = null;
 let state: State | null = null;
 let misses = 0;
+// Non-null exactly while the scan screen is up. Scanning is a screen, not an
+// overlay: the camera replaces the window, and every event re-renders whichever
+// screen the auditor is actually on.
 let camera: Camera | null = null;
+let ambiguous: readonly string[] = [];
 let syncing = false;
 
 // One drain loop at a time. Each shelf completion would otherwise start
@@ -112,84 +117,72 @@ function dispatch(event: Event): void {
 
 function render(): void {
   if (state === null) return;
+  if (camera !== null) {
+    renderScan(host, state, camera, ambiguous, {
+      dispatch,
+      choose: (value) => {
+        ambiguous = [];
+        accept(value);
+      },
+      close: closeScan,
+    });
+    return;
+  }
   renderWalk(host, state, misses, pendingCount(), {
     dispatch,
-    scan: () =>
-      void openScanner('Scan to re-anchor', (tag) => dispatch({ kind: 'IDENTIFY', tag }), render),
+    scan: () => void openScan(),
     finish: () => void finish(),
   });
 }
 
-// One barcode scan locates the cursor in history definitively, which is why
-// this is a button on the walk screen rather than an item in a menu: it is the
-// recovery path when the auditor has lost their place. Reconciliation reuses
-// it for the device whose note could not be read.
-//
-// `back` re-renders whichever screen opened the scanner. It is a callback and
-// not a saved copy of the DOM, because a cloned node keeps none of its event
-// listeners and a screen whose buttons quietly stop working is worse than one
-// that never appeared.
-async function openScanner(
-  title: string,
-  onTag: (tag: AssetTag) => void,
-  back: () => void,
-): Promise<void> {
+// One barcode read locates the cursor in history definitively, which is why
+// this is a screen of its own rather than an item in a menu: it is where an
+// auditor goes when they have lost their place, and where they stay until they
+// have found it again.
+async function openScan(): Promise<void> {
   if (!scanningAvailable()) {
     replace(
       host,
       el('header', {}, el('h1', {}, 'Scanning unavailable')),
-      el('p', {}, 'This browser has no barcode reader. Type the tag from the note instead.'),
-      button('Back', back, 'primary'),
+      el(
+        'p',
+        {},
+        'This browser has no barcode reader. Type the tag from the note instead — ' +
+          'the walk does not need a barcode to finish.',
+      ),
+      button('Back', render, 'primary'),
     );
     return;
   }
 
-  const status = el('p', {});
-  const close = (): void => {
-    camera?.stop();
-    camera = null;
-    back();
-  };
-
   camera = await openCamera((event) => {
     if (event.kind === 'AMBIGUOUS') {
-      // Several codes in one frame. Never silently mark several assets
-      // scanned; make the auditor pick the device actually in their hands.
       rejectScan();
-      replace(
-        status,
-        el('span', {}, 'More than one code in frame — tap the one you are holding:'),
-        ...event.values.map((value) =>
-          button(value, () => {
-            close();
-            identifyScanned(value, onTag);
-          }),
-        ),
-      );
+      ambiguous = event.values;
+      render();
       return;
     }
-    close();
-    identifyScanned(event.value, onTag);
+    ambiguous = [];
+    accept(event.value);
   });
-
-  replace(
-    host,
-    el('header', {}, el('h1', {}, title), button('Cancel', close)),
-    camera.video,
-    el('div', { class: 'target' }),
-    status,
-    camera.hasTorch ? button('Torch', () => void camera?.setTorch(true), 'primary') : '',
-  );
+  render();
 }
 
-function identifyScanned(raw: string, onTag: (tag: AssetTag) => void): void {
+function closeScan(): void {
+  camera?.stop();
+  camera = null;
+  ambiguous = [];
+  render();
+}
+
+function accept(raw: string): void {
   const tag = assetTag(raw);
   if (tag === null) {
     rejectScan();
     return;
   }
   void confirmScan();
-  onTag(tag);
+  dispatch({ kind: 'IDENTIFY', tag });
 }
 
 async function finish(): Promise<void> {

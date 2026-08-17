@@ -54,14 +54,12 @@ def test_a_shelf_is_accepted_in_the_wire_shape_the_client_sends(client):
             "confirmed": SHELF[:2],
             "unresolved": SHELF[2:],
             "new_devices": ["UOM999999"],
-            "unreadable": 1,
         },
     )
     assert response.status_code == 204
 
     reconciliation = client.get(f"/api/walks/{WALK}/reconciliation").json()
     assert reconciliation["new_devices"] == ["UOM999999"]
-    assert reconciliation["unreadable"] == 1
 
 
 def test_a_shelf_without_an_idempotency_key_is_refused(client):

@@ -25,7 +25,6 @@ export type Event =
   // rather than something the reducer has to guard against at runtime.
   | { kind: 'CONFIRM'; offset: number }
   | { kind: 'IDENTIFY'; tag: AssetTag }
-  | { kind: 'UNREADABLE' }
   | { kind: 'UNDO' };
 
 export interface State {
@@ -41,11 +40,6 @@ export interface State {
   // shelf's new physical order. That makes this the next walk's history.
   readonly confirmed: ReadonlyMap<AssetTag, number>;
   readonly newDevices: readonly AssetTag[];
-  // Devices seen whose note could not be read. A count, not a set: at the
-  // moment of the event nobody knows which entry it was, and guessing would
-  // put a fabricated tag into the record. It travels to the variance report as
-  // "expect this many of these to be physically present".
-  readonly unreadable: number;
   // The state before the last event. Undo is a pointer rather than a set of
   // inverse operations: states are immutable and structurally shared, a shelf
   // is ~40 entries, and keeping the chain costs less than reasoning about how
@@ -59,7 +53,6 @@ export interface ShelfResult {
   readonly confirmed: readonly AssetTag[];
   readonly unresolved: readonly AssetTag[];
   readonly newDevices: readonly AssetTag[];
-  readonly unreadable: number;
 }
 
 export function begin(
@@ -77,7 +70,6 @@ export function begin(
     pile: new Map(),
     confirmed: new Map(),
     newDevices: [],
-    unreadable: 0,
     previous: null,
   };
 }
@@ -103,9 +95,6 @@ export function reduce(state: State, event: Event): State {
 
     case 'IDENTIFY':
       return identify(state, event.tag);
-
-    case 'UNREADABLE':
-      return { ...state, unreadable: state.unreadable + 1, previous: state };
 
     case 'UNDO':
       return state.previous ?? state;
@@ -195,6 +184,5 @@ export function result(state: State): ShelfResult {
       ...state.history.slice(state.cursor).map((position) => position.asset),
     ],
     newDevices: state.newDevices,
-    unreadable: state.unreadable,
   };
 }

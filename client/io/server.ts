@@ -64,7 +64,6 @@ export function queueShelf(result: ShelfResult): void {
     confirmed: result.confirmed,
     unresolved: result.unresolved,
     new_devices: result.newDevices,
-    unreadable: result.unreadable,
   });
 }
 

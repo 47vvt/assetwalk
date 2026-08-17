@@ -113,7 +113,6 @@ class ServiceNowStore:
                 # from nowhere is an incident, not a data-entry correction.
                 "unexpected": result.new_devices,
                 "positions": list(enumerate(result.confirmed)),
-                "unreadable": result.unreadable,
             },
             headers={"Idempotency-Key": idempotency_key},
         )

@@ -76,18 +76,6 @@ def test_new_devices_are_gathered_across_the_whole_audit():
     assert result.new_devices == ["UOM111111", "UOM222222"]
 
 
-def test_unreadable_devices_are_reported_rather_than_silently_lost():
-    # Otherwise the same fact arrives at the end of the audit as an
-    # unexplained shortfall.
-    result = reconcile(
-        [
-            shelf("BAY-A", ["UOM000001"], ["UOM000002"], unreadable=2),
-            shelf("BAY-B", ["UOM000003"], [], unreadable=1),
-        ]
-    )
-    assert result.unreadable == 3
-
-
 def test_an_internal_move_never_produces_a_removal_and_a_new_asset():
     # The failure this whole design exists to prevent: one device moving from
     # one shelf to another turning into a phantom removal on the first shelf

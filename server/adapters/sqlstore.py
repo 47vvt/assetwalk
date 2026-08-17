@@ -41,7 +41,6 @@ CREATE TABLE IF NOT EXISTS shelf_result (
     confirmed TEXT NOT NULL,
     unresolved TEXT NOT NULL,
     new_devices TEXT NOT NULL,
-    unreadable INTEGER NOT NULL,
     PRIMARY KEY (walk, location)
 );
 CREATE TABLE IF NOT EXISTS applied_key (
@@ -94,15 +93,14 @@ class SqlStore:
 
             self.db.execute(
                 "INSERT OR REPLACE INTO shelf_result "
-                "(walk, location, confirmed, unresolved, new_devices, unreadable) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "(walk, location, confirmed, unresolved, new_devices) "
+                "VALUES (?, ?, ?, ?, ?)",
                 (
                     result.walk,
                     result.location,
                     json.dumps(result.confirmed),
                     json.dumps(result.unresolved),
                     json.dumps(result.new_devices),
-                    result.unreadable,
                 ),
             )
             # The confirmations are the next walk's history: they are the order
@@ -115,7 +113,7 @@ class SqlStore:
 
     def shelves(self, walk_id: str) -> list[ShelfResult]:
         rows = self.db.execute(
-            "SELECT walk, location, confirmed, unresolved, new_devices, unreadable "
+            "SELECT walk, location, confirmed, unresolved, new_devices "
             "FROM shelf_result WHERE walk = ? ORDER BY location",
             (walk_id,),
         )
@@ -126,9 +124,8 @@ class SqlStore:
                 confirmed=json.loads(confirmed),
                 unresolved=json.loads(unresolved),
                 new_devices=json.loads(new_devices),
-                unreadable=unreadable,
             )
-            for walk, location, confirmed, unresolved, new_devices, unreadable in rows
+            for walk, location, confirmed, unresolved, new_devices in rows
         ]
 
     def record_sheets(self, sheets: list[Sheet]) -> None:

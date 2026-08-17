@@ -52,11 +52,20 @@ Two primitives, and nothing else:
    last cell submits: there is no button, because the row is either complete or
    it is not.
 
-**Undo.** The device just confirmed stays on screen, faint, with an Undo beside
-it. People tapping fast mis-tap, and a wrong confirmation is otherwise silent —
-nothing later in the walk reveals it, and the shelf it swept into the pile stays
-unresolved for the rest of the audit. One tap takes back one event, whatever
-that event was, and puts a swept run back in the window.
+**Undo.** The device just confirmed stays on screen, faint, and one button
+takes back the last action — a tapped entry, a typed tag, or a scan. People
+tapping fast mis-tap, and a wrong confirmation is otherwise silent: nothing
+later in the walk reveals it, and the run it swept into the pile stays
+unresolved for the rest of the audit. Undoing a confirmation puts that run back
+in the window.
+
+**Scanning is a screen, not a one-shot.** A barcode read locates the cursor in
+history definitively, so it is where an auditor goes when they have lost their
+place — and they stay there until they have found it. The camera replaces the
+window; the last confirmed device and the tag field sit underneath it, because
+the job has not changed, only how the label is being read. A frame with several
+codes in it never resolves itself: stacked devices sit close together, and
+taking the first one silently marks the wrong asset scanned.
 
 | | Where it is found | What it means |
 |---|---|---|
@@ -185,15 +194,15 @@ non-blank lines:
 
 | Component | Budget | Actual |
 |---|---|---|
-| `client/core` — reducer, sheets, domain | ~400 | **233** |
+| `client/core` — reducer, sheets, domain | ~400 | **226** |
 | `client/io/parse.ts` — validation boundary | ~50 | **65** |
 | `client/io/auth.ts` — PKCE | ~100 | **76** |
 | `client/io/server.ts` — fetches, offline queue | — | **105** |
 | `client/pdf` — writer and sheet layout | ~250 | **121** |
 | `client/platform` — capability adapters | ~150 | **125** |
-| `client/ui` + `main.ts` + demo fixture | — | **443** |
-| `server` — the whole backend | ~600 | **568** |
-| Tests (client 514, server 430) | — | **944** |
+| `client/ui` + `main.ts` + demo fixture | — | **507** |
+| `server` — the whole backend | ~600 | **561** |
+| Tests (client 506, server 417) | — | **923** |
 
 More test code than application code in the parts where being wrong is silent.
 That is deliberate.
@@ -352,11 +361,15 @@ divergence between the two.
 
 ## Known gaps
 
-- **No ZXing fallback yet.** Camera scanning uses the native `BarcodeDetector`
-  and feature-detects; where it is absent the UI says so and the walk continues
-  on the keypad, which is a first-class path rather than a degraded one — the
-  point of Algorithm 1 is finishing an audit without reaching a barcode at all.
-  Vendoring `@zxing/library` for older iOS is not done.
+- **No ZXing fallback yet.** Scanning uses the native `BarcodeDetector` and
+  feature-detects; where it is absent the scan screen says so and the walk
+  continues on typed tags, which is a first-class path rather than a degraded
+  one — the point of Algorithm 1 is finishing an audit without reaching a
+  barcode at all. Vendoring `@zxing/library` for older iOS is not done.
+- **A present-but-unreadable device cannot be recorded as such.** A faded
+  sticky note and a missing laptop are different facts that look identical
+  during a walk, and both now land in the same unresolved bucket in the
+  variance report.
 - **No Capacitor shell.** Step 6 of the build order, and deliberately last:
   scaffold native first and native assumptions leak into the core, permanently
   losing the browser-auditable property. Nothing yet requires it — see

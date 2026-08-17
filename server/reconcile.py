@@ -50,7 +50,4 @@ def reconcile(shelves: list[ShelfResult]) -> Reconciliation:
         relocated=relocated,
         candidates=candidates,
         new_devices=new_devices,
-        # Devices the auditor saw but could not read. Reported so the count
-        # does not arrive at the end of the audit as an unexplained shortfall.
-        unreadable=sum(shelf.unreadable for shelf in walked),
     )

@@ -90,7 +90,6 @@ class Instance:
             "confirmed": body["scanned"],
             "unresolved": body["unresolved"],
             "newDevices": body["unexpected"],
-            "unreadable": body["unreadable"],
         }
         self.positions = [p for p in self.positions if p[0] != location]
         self.positions += [(location, i, tag) for i, tag in enumerate(body["scanned"])]
@@ -214,7 +213,6 @@ def test_the_servicenow_adapter_sends_confirmations_and_not_removals():
             confirmed=[SHELF[0], SHELF[1]],
             unresolved=[SHELF[2]],
             new_devices=["UOM999999"],
-            unreadable=1,
         ),
         "key-mapping",
     )
@@ -229,7 +227,6 @@ def test_the_servicenow_adapter_sends_confirmations_and_not_removals():
     assert scan["unresolved"] == [SHELF[2]]
     # A device nobody expected is reported for triage, never auto-created.
     assert scan["unexpected"] == ["UOM999999"]
-    assert scan["unreadable"] == 1
 
 
 def test_the_servicenow_adapter_carries_the_callers_own_token():

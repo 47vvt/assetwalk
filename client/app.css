@@ -337,21 +337,6 @@ button[disabled] {
   font-size: 0.9rem;
 }
 
-/* The video stays visible with a target overlay rather than going fullscreen:
-   auditors need to see the shelf and the app at the same time. */
-.scanner video,
-header + video {
-  width: 100%;
-  border-radius: 0.5rem;
-  background: #000;
-}
-
-.target {
-  height: 3px;
-  background: var(--danger);
-  margin: -6rem 2rem 6rem;
-  opacity: 0.8;
-}
 
 
 /* Present without competing: Undo is used rarely, but when it is needed it is
@@ -359,4 +344,38 @@ header + video {
 button.quiet {
   border-style: dashed;
   opacity: 0.8;
+}
+
+/* The camera replaces the window on the scan screen. It stays a panel rather
+   than going fullscreen: an auditor reading a barcode still has to see what
+   they have recorded, and a preview that covers the app makes them choose. */
+.viewfinder {
+  position: relative;
+  margin-top: 0.75rem;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: #000;
+}
+
+.viewfinder video {
+  display: block;
+  width: 100%;
+  /* Tall enough to aim, short enough that the last scan and the tag field stay
+     on screen underneath without scrolling. */
+  max-height: 44vh;
+  object-fit: cover;
+}
+
+.target {
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  top: 50%;
+  height: 3px;
+  background: var(--danger);
+  opacity: 0.85;
+}
+
+.ambiguous {
+  margin-top: 0.75rem;
 }

@@ -122,19 +122,6 @@ test('an asset from another shelf is confirmed, not recorded as new', () => {
   assert.deepEqual([...outcome.unresolved], []);
 });
 
-test('unreadable devices are counted without inventing a tag', () => {
-  const history = shelfOf([1, 2, 3].map(tag));
-  let state = begin(WALK, BAY, history, new Set());
-
-  state = reduce(state, { kind: 'UNREADABLE' });
-  state = reduce(state, { kind: 'UNREADABLE' });
-
-  assert.equal(state.unreadable, 2);
-  assert.equal(state.cursor, 0);
-  assert.equal(state.pile.size, 0);
-  assert.equal(result(state).unreadable, 2);
-});
-
 test('undo puts a swept run back in the window', () => {
   const history = shelfOf([1, 2, 3, 4, 5, 6].map(tag));
   const roster = new Set(history.map((position) => position.asset));
@@ -157,22 +144,24 @@ test('undo puts a swept run back in the window', () => {
   assert.deepEqual(windowOf(state).map((p) => p.asset), [1, 2, 3].map(tag));
 });
 
-test('undo takes back one event at a time, whatever it was', () => {
+test('undo takes back one action at a time, whatever it was', () => {
   const history = shelfOf([1, 2, 3].map(tag));
-  let state = begin(WALK, BAY, history, new Set());
+  const roster = new Set(history.map((position) => position.asset));
+  let state = begin(WALK, BAY, history, roster);
 
+  // A tapped entry, then a typed tag. One button takes back either.
   state = reduce(state, { kind: 'CONFIRM', offset: 0 });
-  state = reduce(state, { kind: 'UNREADABLE' });
-  assert.equal(state.unreadable, 1);
-  assert.equal(lastConfirmed(state), tag(1));
+  state = reduce(state, { kind: 'IDENTIFY', tag: tag(3) });
+  assert.equal(lastConfirmed(state), tag(3));
+  assert.equal(state.pile.size, 1, 'device 2 was stepped over');
 
-  // One tap undoes the unreadable, not the confirmation before it.
   state = reduce(state, { kind: 'UNDO' });
-  assert.equal(state.unreadable, 0);
-  assert.equal(lastConfirmed(state), tag(1));
+  assert.equal(lastConfirmed(state), tag(1), 'the typed tag went, the tap stayed');
+  assert.equal(state.pile.size, 0);
 
   state = reduce(state, { kind: 'UNDO' });
   assert.equal(lastConfirmed(state), undefined);
+  assert.equal(state.previous, null);
 });
 
 test('undo at the start of a walk is a no-op', () => {

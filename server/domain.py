@@ -50,7 +50,6 @@ class ShelfResult(BaseModel):
     confirmed: list[Tag] = Field(default_factory=list)
     unresolved: list[Tag] = Field(default_factory=list)
     new_devices: list[Tag] = Field(default_factory=list)
-    unreadable: Annotated[int, Field(ge=0)] = 0
 
 
 class Sheet(BaseModel):
@@ -81,5 +80,4 @@ class Reconciliation(BaseModel):
     relocated: list[Relocation] = Field(default_factory=list)
     candidates: list[Candidate] = Field(default_factory=list)
     new_devices: list[Tag] = Field(default_factory=list)
-    unreadable: int = 0
 
