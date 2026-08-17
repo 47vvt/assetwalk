@@ -41,9 +41,9 @@ export function renderSheets(
         { class: 'candidate' },
         el(
           'div',
-          { class: 'entry' },
-          el('strong', {}, `${sheet.members.length}`),
-          el('small', {}, `above ${sheet.members[0] ?? ''} · sheet ${sheet.id}`),
+          { class: 'row' },
+          el('strong', { class: 'count' }, `${sheet.members.length}`),
+          el('small', {}, `devices · place above ${sheet.members[0] ?? ''}`),
         ),
       ),
     ),

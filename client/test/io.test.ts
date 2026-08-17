@@ -63,6 +63,21 @@ test('reconciliation parses only the candidates the auditor must decide', () => 
   assert.equal(parsed.unreadable, 2);
 });
 
+test('a standalone config asks for no sign-in', () => {
+  // A SQLite backend has no instance to authenticate against. Demanding a
+  // sign-in for it would put a door in front of an empty room.
+  const standalone = parseConfig({ backend: '/api' });
+  assert.equal(standalone.oauth, null);
+  assert.equal(standalone.backend, '/api');
+
+  const federated = parseConfig({
+    backend: '/api',
+    instance: 'https://example.invalid',
+    clientID: 'assetwalk',
+  });
+  assert.equal(federated.oauth?.clientID, 'assetwalk');
+});
+
 test('a plaintext instance is refused rather than warned about', () => {
   // PKCE over plaintext defends against nothing at all.
   assert.throws(() => parseInstanceURL('http://example.invalid'));

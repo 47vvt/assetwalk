@@ -8,7 +8,7 @@
 // correction, so each one gets an explicit decision.
 
 import type { AssetTag, LocationID } from '../core/types.js';
-import { button, el, lastFour, replace } from './dom.js';
+import { button, el, replace, tagLabel } from './dom.js';
 
 export interface Candidate {
   readonly asset: AssetTag;
@@ -26,6 +26,7 @@ export function renderReconcile(
   host: HTMLElement,
   candidates: readonly Candidate[],
   unreadable: number,
+  chosen: ReadonlyMap<AssetTag, Decision>,
   handlers: ReconcileHandlers,
 ): void {
   replace(
@@ -50,21 +51,44 @@ export function renderReconcile(
         { class: 'candidate' },
         el(
           'div',
-          { class: 'entry' },
-          el('strong', {}, lastFour(candidate.asset)),
-          el('small', {}, `${candidate.asset} · last seen ${candidate.location}`),
+          { class: 'row' },
+          tagLabel(candidate.asset),
+          el('small', {}, `last seen ${candidate.location}`),
         ),
+        // Every answer is visibly recorded. An auditor who cannot tell whether
+        // their tap registered will tap again, and on this screen a double tap
+        // is the difference between "gone" and "no answer given".
         el(
           'nav',
           {},
-          button('Not here', () => handlers.decide(candidate.asset, 'removed'), 'danger'),
-          button('Missed it', () => handlers.decide(candidate.asset, 'recheck')),
-          button('Here, note unreadable', () =>
-            handlers.decide(candidate.asset, 'unreadable'),
-          ),
+          choice(candidate, chosen, handlers, 'removed', 'Not here — it is gone', 'danger'),
+          choice(candidate, chosen, handlers, 'recheck', 'Missed it — go back and look'),
+          choice(candidate, chosen, handlers, 'unreadable', 'Here, but I could not read it'),
         ),
       ),
     ),
-    button('Submit reconciliation', handlers.done, 'finish'),
+    button(
+      chosen.size === candidates.length
+        ? 'Submit reconciliation'
+        : `Submit — ${candidates.length - chosen.size} still undecided`,
+      handlers.done,
+      'finish wide',
+    ),
+  );
+}
+
+function choice(
+  candidate: Candidate,
+  chosen: ReadonlyMap<AssetTag, Decision>,
+  handlers: ReconcileHandlers,
+  decision: Decision,
+  label: string,
+  tone = '',
+): HTMLElement {
+  const picked = chosen.get(candidate.asset) === decision;
+  return button(
+    picked ? `${label}  ✓` : label,
+    () => handlers.decide(candidate.asset, decision),
+    `${tone} ${picked ? 'chosen' : ''}`.trim(),
   );
 }

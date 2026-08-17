@@ -8,7 +8,6 @@ import type { AssetTag, LocationID, WalkID } from './core/types.js';
 import { begin, reduce, result } from './core/walk.js';
 import type { Event, State } from './core/walk.js';
 import { parseConfig, parseWalkID } from './io/parse.js';
-import type { Config } from './io/parse.js';
 import { oauthFrom, signIn } from './io/auth.js';
 import {
   drain,
@@ -28,6 +27,7 @@ import { DEMO_HISTORY, DEMO_LOCATION, DEMO_ROSTER, DEMO_WALK } from './demo-shel
 import { button, el, replace } from './ui/dom.js';
 import { renderIdentify } from './ui/identify-view.js';
 import { renderReconcile } from './ui/reconcile-view.js';
+import type { Decision as ReconcileDecision } from './ui/reconcile-view.js';
 import { renderSheets } from './ui/sheets-view.js';
 import { renderWalk } from './ui/walk-view.js';
 
@@ -71,22 +71,39 @@ async function load(): Promise<void> {
   const id = parseWalkID(walk);
   const config = parseConfig(await (await fetch('./config.json')).json());
 
-  // Sign-in is behind a button because browsers only open the authorisation
-  // window from a user gesture, and PKCE needs that window to keep the
-  // verifier out of storage.
+  // A standalone SQLite deployment has nothing to sign in to, so it starts
+  // walking immediately.
+  if (config.oauth === null) {
+    backend = { base: config.backend, token: null };
+    return open(id, location);
+  }
+
+  // Otherwise sign-in is behind a button, because browsers only open the
+  // authorisation window from a user gesture and PKCE needs that window in
+  // order to keep the verifier out of storage.
+  const { instance, clientID } = config.oauth;
   replace(
     host,
     el('header', {}, el('h1', {}, 'AssetWalk')),
     el('p', {}, `Walk ${id} · ${location}`),
-    button('Sign in', () => void start(config, id, location), 'finish'),
+    button('Sign in', () => void start(config.backend, instance, clientID, id, location), 'finish'),
   );
 }
 
-async function start(config: Config, walk: WalkID, location: LocationID): Promise<void> {
+async function start(
+  base: string,
+  instance: string,
+  clientID: string,
+  walk: WalkID,
+  location: LocationID,
+): Promise<void> {
   const callback = new URL('./callback.html', window.location.href).href;
-  const token = await signIn(oauthFrom(config.instance, config.clientID, callback));
-  backend = { base: config.backend, token };
+  backend = { base, token: await signIn(oauthFrom(instance, clientID, callback)) };
+  return open(walk, location);
+}
 
+async function open(walk: WalkID, location: LocationID): Promise<void> {
+  if (backend === null) return;
   const [roster, history] = await Promise.all([
     fetchRoster(backend, walk),
     fetchHistory(backend, location),
@@ -260,12 +277,17 @@ async function openReconcile(walk: WalkID): Promise<void> {
 
   const { candidates, unreadable } = await fetchReconciliation(backend, walk);
   const decisions = new Map<AssetTag, Decision['decision']>();
+  // What the auditor has answered so far, including the two answers that are
+  // not conclusions, so the screen can show every tap as recorded.
+  const answered = new Map<AssetTag, ReconcileDecision>();
 
   const show = (): void =>
-    renderReconcile(host, candidates, unreadable, {
+    renderReconcile(host, candidates, unreadable, answered, {
       decide: (asset, decision) => {
+        answered.set(asset, decision);
         if (decision === 'removed') {
           decisions.set(asset, 'removed');
+          show();
           return;
         }
         // The other two answers are not conclusions, they are ways of going

@@ -10,9 +10,11 @@ repository. Everything is injected at deploy time through the environment.
 """
 
 import os
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Response
+from fastapi.staticfiles import StaticFiles
 
 from adapters.servicenow import ServiceNowStore
 from adapters.sqlstore import SqlStore
@@ -116,3 +118,12 @@ def register_sheets(location_id: str, sheets: list[Sheet], store: Bound) -> Resp
 @app.get("/api/locations/{location_id}/sheets")
 def printed_sheets(location_id: str, store: Bound) -> list[Sheet]:
     return store.sheets(location_id)
+
+
+# Standalone deployments serve the client from here as well. That puts the whole
+# application on one origin, which is what makes `connect-src 'self'` in the
+# client's CSP literally true and means standalone needs no CORS rules at all.
+# Mounted last so every /api route above is matched first.
+CLIENT = Path(__file__).resolve().parent.parent / "client"
+if CLIENT.is_dir():
+    app.mount("/", StaticFiles(directory=CLIENT, html=True), name="client")

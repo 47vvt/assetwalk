@@ -1,10 +1,15 @@
-// The walk screen. Two primitives and nothing else: tap an entry to confirm
-// it, or say it is not in the list.
+// The walk screen. Two primitives and nothing else: tap the device in your
+// hand if it is on screen, or say it is not.
+//
+// Everything here is arranged around the fact that the auditor is standing at
+// a shelf holding a laptop and looking at a sticky note — not reading an
+// interface. The screen has to answer "what do I do with the thing in my
+// hand?" without being read.
 
 import { recentOf, windowOf } from '../core/walk.js';
 import type { Event, State } from '../core/walk.js';
 import type { AssetTag } from '../core/types.js';
-import { button, el, lastFour, replace } from './dom.js';
+import { button, el, replace, tagLabel } from './dom.js';
 
 // After three "not in list" events in a row the auditor is more likely on the
 // wrong shelf than looking at three unknown devices. This is a nudge to
@@ -28,6 +33,7 @@ export function renderWalk(
 ): void {
   const recent = recentOf(state);
   const upcoming = windowOf(state);
+  const ahead = state.history.length - state.cursor;
 
   replace(
     host,
@@ -35,7 +41,11 @@ export function renderWalk(
       'header',
       {},
       el('h1', {}, state.location),
-      el('span', { class: 'progress' }, `${state.confirmed.size} confirmed`),
+      el(
+        'span',
+        { class: 'progress' },
+        `${state.confirmed.size} done${ahead > 0 ? ` · ${ahead} ahead` : ''}`,
+      ),
       pending > 0 ? el('span', { class: 'pending' }, `${pending} queued`) : '',
     ),
 
@@ -49,12 +59,13 @@ export function renderWalk(
       : '',
 
     // Passed entries stay tappable. An adjacent swap is the most common change
-    // between walks, and this turns it into one tap instead of a typed tag.
+    // between walks, and this turns it into one tap instead of a typed tag —
+    // so the heading says what tapping one does, not what the row is.
     recent.length > 0
       ? el(
           'section',
           { class: 'recent' },
-          el('h2', {}, `last ${recent.length} passed`),
+          el('h2', {}, 'Already passed — tap to go back'),
           ...recent.map((position, offset) =>
             entry(position.asset, state.cursor - recent.length + offset, state, handlers),
           ),
@@ -64,25 +75,40 @@ export function renderWalk(
     el(
       'section',
       { class: 'window' },
+      el(
+        'h2',
+        { class: 'lead' },
+        upcoming.length > 0 ? 'Tap the device in your hand' : 'End of this shelf',
+      ),
       ...upcoming.map((position, offset) =>
         entry(position.asset, state.cursor + offset, state, handlers),
       ),
       upcoming.length === 0
-        ? el('p', { class: 'empty' }, 'End of this shelf’s history.')
+        ? el(
+            'p',
+            { class: 'empty' },
+            'Nothing left in the recorded order. Anything still on the shelf is ' +
+              'either new or has moved — use “Not one of these”.',
+          )
         : '',
     ),
 
     el(
       'nav',
       {},
-      button('Not in list', handlers.identify, 'primary'),
-      button('Scan to re-anchor', handlers.scan, 'primary'),
+      // The second primitive, and the answer to the commonest question on this
+      // screen, so it gets a row of its own.
+      button('Not one of these', handlers.identify, 'primary wide'),
+      button('Scan a barcode', handlers.scan),
       // A faded sticky note and a missing laptop look identical during a walk
       // and are completely different facts. Recording the difference here is
       // the only moment anyone still knows it.
-      button('Can’t read note', () => handlers.dispatch({ kind: 'UNREADABLE' })),
-      button('Undo', () => handlers.dispatch({ kind: 'UNDO' })),
-      button('Finish shelf', handlers.finish, 'finish'),
+      button('Can’t read the note', () => handlers.dispatch({ kind: 'UNREADABLE' })),
+      // Kept away from Finish: people tapping fast mis-tap, and a wrong
+      // confirmation is silent corruption, so undo has to be easy to hit and
+      // hard to hit by accident.
+      button('Undo last', () => handlers.dispatch({ kind: 'UNDO' }), 'wide quiet'),
+      button('Finish shelf', handlers.finish, 'finish wide'),
     ),
   );
 }
@@ -95,12 +121,7 @@ function entry(
 ): HTMLElement {
   const done = state.confirmed.has(tag);
   return button(
-    el(
-      'span',
-      {},
-      el('strong', {}, lastFour(tag)),
-      el('small', {}, tag),
-    ),
+    el('span', { class: 'row' }, tagLabel(tag), done ? el('span', { class: 'mark' }, '✓') : ''),
     () => handlers.dispatch({ kind: 'CONFIRM', index }),
     done ? 'entry done' : 'entry',
   );

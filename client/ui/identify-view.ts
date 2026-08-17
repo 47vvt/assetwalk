@@ -8,7 +8,7 @@
 import { assetTag, digitsOf } from '../core/types.js';
 import type { AssetTag } from '../core/types.js';
 import type { State } from '../core/walk.js';
-import { button, el, lastFour, replace } from './dom.js';
+import { button, el, replace, tagLabel } from './dom.js';
 
 export interface IdentifyHandlers {
   readonly choose: (tag: AssetTag) => void;
@@ -29,9 +29,14 @@ export function renderIdentify(
 
   const results = el('section', { class: 'results' });
   const readout = el('output', { class: 'readout' });
+  const hint = el('p', { class: 'hint' });
 
   const refresh = (): void => {
-    readout.textContent = typed === '' ? 'type any digits from the note' : typed;
+    readout.textContent = typed;
+    hint.textContent =
+      typed === ''
+        ? 'Tap digits from the note to narrow the list'
+        : 'Showing every tag containing';
 
     const ahead = state.history
       .slice(state.cursor)
@@ -48,7 +53,7 @@ export function renderIdentify(
     replace(
       results,
       group('Still expected on this shelf', ahead.slice(0, SHOW_LIMIT), handlers),
-      group('Elsewhere in this audit', elsewhere, handlers),
+      group('Somewhere else in this audit', elsewhere, handlers),
       // Offered only once nothing else matches, so the auditor cannot record a
       // phantom new device while the real entry is sitting on screen above it.
       newDevice(typed, ahead.length + elsewhere.length === 0, handlers),
@@ -62,23 +67,37 @@ export function renderIdentify(
 
   replace(
     host,
-    el('header', {}, el('h1', {}, 'Which device?'), button('Cancel', handlers.cancel)),
-    readout,
+    el(
+      'header',
+      {},
+      el('h1', {}, 'Which device is it?'),
+      button('Back', handlers.cancel),
+    ),
+    // The full remaining shelf comes first and typing only narrows it. The
+    // commonest reason a device is missing from the window is a run of
+    // removals above it, and that device is already on this list — reaching
+    // for the keypad should never be the first move.
+    results,
     el(
       'div',
-      { class: 'keypad' },
-      ...'123456789'.split('').map((d) => button(d, () => press(d))),
-      button('⌫', () => {
-        typed = typed.slice(0, -1);
-        refresh();
-      }),
-      button('0', () => press('0')),
-      button('clear', () => {
-        typed = '';
-        refresh();
-      }),
+      { class: 'pad' },
+      hint,
+      readout,
+      el(
+        'div',
+        { class: 'keypad' },
+        ...'123456789'.split('').map((d) => button(d, () => press(d))),
+        button('⌫', () => {
+          typed = typed.slice(0, -1);
+          refresh();
+        }),
+        button('0', () => press('0')),
+        button('clear', () => {
+          typed = '';
+          refresh();
+        }),
+      ),
     ),
-    results,
   );
   refresh();
 }
@@ -91,11 +110,7 @@ function group(title: string, tags: readonly AssetTag[], handlers: IdentifyHandl
     ...(tags.length === 0
       ? [el('p', { class: 'empty' }, 'nothing matching')]
       : tags.map((tag) =>
-          button(
-            el('span', {}, el('strong', {}, lastFour(tag)), el('small', {}, tag)),
-            () => handlers.choose(tag),
-            'entry',
-          ),
+          button(el('span', { class: 'row' }, tagLabel(tag)), () => handlers.choose(tag), 'entry'),
         )),
   );
 }
@@ -112,9 +127,14 @@ function newDevice(typed: string, offer: boolean, handlers: IdentifyHandlers): H
   return el(
     'div',
     { class: 'group' },
-    el('h2', {}, 'Not on the roster'),
+    el('h2', {}, 'Not expected anywhere in this audit'),
     button(
-      el('span', {}, el('strong', {}, lastFour(tag)), el('small', {}, 'record as a new device')),
+      el(
+        'span',
+        { class: 'row' },
+        tagLabel(tag),
+        el('small', {}, 'record as a device nobody expected'),
+      ),
       () => handlers.choose(tag),
       'entry',
     ),

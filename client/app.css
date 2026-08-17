@@ -100,22 +100,60 @@ button.danger {
   margin-bottom: 0.5rem;
 }
 
-.entry strong {
-  /* The last four digits, at the size they are readable from arm's length. */
-  font-size: 2rem;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
-  display: block;
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  width: 100%;
 }
 
-.entry small,
-.candidate small {
-  opacity: 0.65;
+/* The whole asset tag, always. An auditor is comparing this against a
+   handwritten note and needs to see the same string that is written on it —
+   the prefix is present and readable, just quiet, so the eye lands on the tail
+   without the rest being hidden. */
+.tag {
+  display: inline-flex;
+  align-items: baseline;
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
 }
 
-.recent .entry strong {
+.tag .prefix {
+  font-size: 1.15rem;
+  font-weight: 400;
+  opacity: 0.4;
+}
+
+.tag .key {
+  /* The size the last four digits are readable at arm's length in bad light. */
+  font-size: 2.1rem;
+  font-weight: 700;
+}
+
+.row small {
+  opacity: 0.6;
+  margin-left: auto;
+  text-align: right;
+}
+
+.mark {
+  margin-left: auto;
   font-size: 1.25rem;
+  opacity: 0.6;
+}
+
+.recent .tag .key {
+  font-size: 1.4rem;
+}
+
+.recent .tag .prefix {
+  font-size: 0.9rem;
+}
+
+.count {
+  font-size: 2.1rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .recent {
@@ -131,12 +169,49 @@ nav {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.5rem;
-  margin-top: 1rem;
+  margin-top: 1.25rem;
 }
 
-nav button.finish,
+nav button.wide,
 nav button:only-child {
   grid-column: 1 / -1;
+}
+
+button.wide {
+  width: 100%;
+}
+
+/* Undo has to be easy to hit deliberately and hard to hit by accident, so it
+   is full width but visually recessive, and never adjacent to Finish. */
+button.quiet {
+  border-style: dashed;
+  opacity: 0.75;
+  min-height: 2.75rem;
+}
+
+/* The instruction that answers "what do I do with the thing in my hand?".
+   The auditor is standing at a shelf, not reading an interface. */
+.lead {
+  font-size: 0.95rem;
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 1;
+  font-weight: 600;
+  margin: 1.25rem 0 0.5rem;
+}
+
+.pad {
+  margin-top: 1.5rem;
+  border-top: 2px solid var(--line);
+  padding-top: 0.75rem;
+}
+
+.hint {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.6;
+  margin: 0;
 }
 
 .nudge {
@@ -148,7 +223,7 @@ nav button:only-child {
 
 .readout {
   display: block;
-  font-size: 2.25rem;
+  font-size: 2rem;
   font-variant-numeric: tabular-nums;
   padding: 0.5rem 0;
   min-height: 3rem;
@@ -193,4 +268,13 @@ header + video {
   background: var(--danger);
   margin: -6rem 2rem 6rem;
   opacity: 0.8;
+}
+
+/* A recorded answer. Without this an auditor cannot tell whether their tap
+   registered, and on the reconciliation screen a repeated tap is the
+   difference between "gone" and "no answer given". */
+button.chosen {
+  border-width: 3px;
+  font-weight: 600;
+  background: color-mix(in srgb, currentColor 12%, transparent);
 }

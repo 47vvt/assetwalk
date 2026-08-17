@@ -196,20 +196,60 @@ npm run check                   # build, then the client suite (node:test)
 cd server && uv run pytest -q   # the backend suite
 ```
 
-### The backend
+### A whole audit, standalone — and how to reach reconciliation
+
+Reconciliation is the one screen the fixture cannot show, because deciding a
+removal needs *every* shelf in the walk and the fixture is a single shelf. Run
+the real thing instead — no ServiceNow instance, no sign-in, four commands:
 
 ```sh
+npm ci && npm run build
+
 cd server
 uv sync
-uv run uvicorn main:app --reload
+cp ../client/config.example.json ../client/config.json   # then delete the
+                                                         # instance + clientID
+                                                         # lines: no instance,
+                                                         # no sign-in
+uv run python cli.py import walk-demo example-walk.csv
+uv run uvicorn main:app --port 8000
 ```
 
-Defaults to SQLite at `./assetwalk.db`. Set `ASSETWALK_STORE=servicenow` and
-`ASSETWALK_INSTANCE_URL=https://…` for production.
+The backend serves the client too, so everything is one origin and
+`connect-src 'self'` stays literally true with no CORS rules anywhere.
+
+Then walk **two** shelves, because that is what makes reconciliation mean
+something:
+
+1. `http://localhost:8000/index.html?walk=walk-demo&location=BAY-A3` — confirm
+   a few devices and leave others unfound, then **Finish shelf**.
+2. `http://localhost:8000/index.html?walk=walk-demo&location=BAY-B1` — this
+   shelf holds `UOM220126`, which the sample data lists on A3. Use **Not one of
+   these** to record it here.
+3. On the completion screen, **Reconcile this walk**.
+
+`UOM220126` will not be on the list: it was unresolved on A3 and confirmed on
+B1, so it is a relocation, not a removal. Only tags nobody found anywhere ask
+for a decision. The button stays available once the outbound queue has drained
+— reconciling while a shelf is still queued would make an unwalked shelf look
+like a room full of missing laptops, so the app refuses.
+
+Afterwards:
+
+```sh
+uv run python cli.py export walk-demo > variances.csv
+```
 
 Standalone SQLite is **not a mock**. Many organisations have this exact
 physical audit problem and no ITAM platform at all; SQLite plus CSV import and
 export is a real deployment mode, and the easiest way to try the project.
+
+### Against ServiceNow
+
+Keep `instance` and `clientID` in `config.json` and set
+`ASSETWALK_STORE=servicenow` plus `ASSETWALK_INSTANCE_URL=https://…` on the
+backend. The client then shows a sign-in button and runs the PKCE flow
+described in `docs/servicenow.md`.
 
 ### Generating an SBOM
 

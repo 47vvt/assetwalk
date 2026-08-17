@@ -85,21 +85,22 @@ export function parseWalkID(raw: string | null): WalkID {
 
 export interface Config {
   readonly backend: string;
-  readonly instance: string;
-  readonly clientID: string;
+  // Absent in standalone deployments. A SQLite backend has no ServiceNow
+  // instance to authenticate against, and putting a sign-in step in front of
+  // it would be theatre — there would be nothing on the other side of it.
+  readonly oauth: { readonly instance: string; readonly clientID: string } | null;
 }
 
 // Fetched at runtime from a file the deployment writes. No instance hostname,
 // client ID or origin appears in this repository, and none can: the file is
 // not committed, and this is the only code that reads one.
 export function parseConfig(raw: unknown): Config {
+  const backend = str(raw, 'config', 'backend');
+  if (field(raw, 'config', 'instance') === undefined) return { backend, oauth: null };
+
   const instance = str(raw, 'config', 'instance');
   parseInstanceURL(instance);
-  return {
-    backend: str(raw, 'config', 'backend'),
-    instance,
-    clientID: str(raw, 'config', 'clientID'),
-  };
+  return { backend, oauth: { instance, clientID: str(raw, 'config', 'clientID') } };
 }
 
 // PKCE defends against an attacker who captures the redirect but is not on the

@@ -21,11 +21,23 @@ export function button(label: Child, onClick: () => void, className = ''): HTMLE
   return node;
 }
 
-// The last four digits, which is what people actually read off a handwritten
-// note — the prefix is the same on every device in the building and the eye
-// skips it.
-export function lastFour(tag: string): string {
-  return tag.slice(-4);
+// How many trailing characters carry the emphasis. Four is what people
+// actually read off a handwritten note: the prefix is identical on every
+// device in the building, so the eye skips it and only the tail distinguishes
+// one laptop from the next.
+const KEY_DIGITS = 4;
+
+// The whole tag, always — an auditor comparing a screen against a sticky note
+// needs to see the same string that is written on it. The prefix is printed
+// small and faint rather than hidden, so the tail is what the eye lands on
+// without the rest becoming a thing they have to take on trust.
+export function tagLabel(tag: string): HTMLElement {
+  return el(
+    'span',
+    { class: 'tag' },
+    el('span', { class: 'prefix' }, tag.slice(0, -KEY_DIGITS)),
+    el('span', { class: 'key' }, tag.slice(-KEY_DIGITS)),
+  );
 }
 
 export function replace(host: HTMLElement, ...children: Child[]): void {
