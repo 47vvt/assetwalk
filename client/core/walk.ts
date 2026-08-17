@@ -25,7 +25,8 @@ export type Event =
   // rather than something the reducer has to guard against at runtime.
   | { kind: 'CONFIRM'; offset: number }
   | { kind: 'IDENTIFY'; tag: AssetTag }
-  | { kind: 'UNREADABLE' };
+  | { kind: 'UNREADABLE' }
+  | { kind: 'UNDO' };
 
 export interface State {
   readonly walk: WalkID;
@@ -45,6 +46,11 @@ export interface State {
   // put a fabricated tag into the record. It travels to the variance report as
   // "expect this many of these to be physically present".
   readonly unreadable: number;
+  // The state before the last event. Undo is a pointer rather than a set of
+  // inverse operations: states are immutable and structurally shared, a shelf
+  // is ~40 entries, and keeping the chain costs less than reasoning about how
+  // to un-sweep a pile would. One tap is one event.
+  readonly previous: State | null;
 }
 
 export interface ShelfResult {
@@ -72,7 +78,15 @@ export function begin(
     confirmed: new Map(),
     newDevices: [],
     unreadable: 0,
+    previous: null,
   };
+}
+
+// The device most recently confirmed. Derived rather than stored: the
+// confirmation map is already in the order the auditor met the devices, so its
+// last key is the answer and a second copy could only disagree with it.
+export function lastConfirmed(state: State): AssetTag | undefined {
+  return [...state.confirmed.keys()].at(-1);
 }
 
 // The next WINDOW entries at or after the cursor. No entry at or after the
@@ -91,7 +105,10 @@ export function reduce(state: State, event: Event): State {
       return identify(state, event.tag);
 
     case 'UNREADABLE':
-      return { ...state, unreadable: state.unreadable + 1 };
+      return { ...state, unreadable: state.unreadable + 1, previous: state };
+
+    case 'UNDO':
+      return state.previous ?? state;
 
     default: {
       const _never: never = event;
@@ -160,7 +177,7 @@ function confirmed(
   // Re-confirming is a no-op rather than a reordering: an auditor who types a
   // tag they already scanned should not shuffle the new shelf order.
   if (!map.has(tag)) map.set(tag, map.size);
-  return { ...state, pile, cursor, confirmed: map };
+  return { ...state, pile, cursor, confirmed: map, previous: state };
 }
 
 // Sent to the server on shelf completion, immediately before the history slice

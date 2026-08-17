@@ -48,7 +48,15 @@ Two primitives, and nothing else:
    on every device in the building — and it is derived from the walk's own tags
    rather than configured. What is left goes in one cell per digit, so the
    auditor can check what they entered against a handwritten note at a glance
-   instead of reading back a run of identical-looking numerals.
+   instead of reading back a run of identical-looking numerals. Filling the
+   last cell submits: there is no button, because the row is either complete or
+   it is not.
+
+**Undo.** The device just confirmed stays on screen, faint, with an Undo beside
+it. People tapping fast mis-tap, and a wrong confirmation is otherwise silent —
+nothing later in the walk reveals it, and the shelf it swept into the pile stays
+unresolved for the rest of the audit. One tap takes back one event, whatever
+that event was, and puts a swept run back in the window.
 
 | | Where it is found | What it means |
 |---|---|---|
@@ -177,15 +185,15 @@ non-blank lines:
 
 | Component | Budget | Actual |
 |---|---|---|
-| `client/core` — reducer, sheets, domain | ~400 | **225** |
+| `client/core` — reducer, sheets, domain | ~400 | **233** |
 | `client/io/parse.ts` — validation boundary | ~50 | **65** |
 | `client/io/auth.ts` — PKCE | ~100 | **76** |
 | `client/io/server.ts` — fetches, offline queue | — | **105** |
 | `client/pdf` — writer and sheet layout | ~250 | **121** |
 | `client/platform` — capability adapters | ~150 | **125** |
-| `client/ui` + `main.ts` + demo fixture | — | **426** |
+| `client/ui` + `main.ts` + demo fixture | — | **443** |
 | `server` — the whole backend | ~600 | **568** |
-| Tests (client 448, server 430) | — | **878** |
+| Tests (client 514, server 430) | — | **944** |
 
 More test code than application code in the parts where being wrong is silent.
 That is deliberate.

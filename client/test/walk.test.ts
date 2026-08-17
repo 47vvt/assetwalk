@@ -9,7 +9,7 @@ import test from 'node:test';
 
 import { assetTag, locationID, walkID } from '../core/types.js';
 import type { AssetTag, LocationID, Position, WalkID } from '../core/types.js';
-import { begin, reduce, result, windowOf } from '../core/walk.js';
+import { begin, lastConfirmed, reduce, result, windowOf } from '../core/walk.js';
 import type { ShelfResult, State } from '../core/walk.js';
 
 function must<T extends string>(value: T | null): T {
@@ -135,6 +135,66 @@ test('unreadable devices are counted without inventing a tag', () => {
   assert.equal(result(state).unreadable, 2);
 });
 
+test('undo puts a swept run back in the window', () => {
+  const history = shelfOf([1, 2, 3, 4, 5, 6].map(tag));
+  const roster = new Set(history.map((position) => position.asset));
+  let state = begin(WALK, BAY, history, roster);
+
+  // Confirming the third entry sweeps the two above it into the pile. This is
+  // the mis-tap that undo exists for: without it those two are unresolved for
+  // the rest of the audit and nothing later in the walk says so.
+  state = reduce(state, { kind: 'CONFIRM', offset: 2 });
+  assert.equal(state.pile.size, 2);
+  assert.equal(lastConfirmed(state), tag(3));
+  assert.deepEqual(windowOf(state).map((p) => p.asset), [4, 5, 6].map(tag));
+
+  state = reduce(state, { kind: 'UNDO' });
+
+  assert.equal(state.pile.size, 0);
+  assert.equal(state.cursor, 0);
+  assert.equal(state.confirmed.size, 0);
+  assert.equal(lastConfirmed(state), undefined);
+  assert.deepEqual(windowOf(state).map((p) => p.asset), [1, 2, 3].map(tag));
+});
+
+test('undo takes back one event at a time, whatever it was', () => {
+  const history = shelfOf([1, 2, 3].map(tag));
+  let state = begin(WALK, BAY, history, new Set());
+
+  state = reduce(state, { kind: 'CONFIRM', offset: 0 });
+  state = reduce(state, { kind: 'UNREADABLE' });
+  assert.equal(state.unreadable, 1);
+  assert.equal(lastConfirmed(state), tag(1));
+
+  // One tap undoes the unreadable, not the confirmation before it.
+  state = reduce(state, { kind: 'UNDO' });
+  assert.equal(state.unreadable, 0);
+  assert.equal(lastConfirmed(state), tag(1));
+
+  state = reduce(state, { kind: 'UNDO' });
+  assert.equal(lastConfirmed(state), undefined);
+});
+
+test('undo at the start of a walk is a no-op', () => {
+  const state = begin(WALK, BAY, shelfOf([1, 2].map(tag)), new Set());
+  assert.equal(reduce(state, { kind: 'UNDO' }), state);
+});
+
+test('a typed tag that was wrong is taken back like any other event', () => {
+  const history = shelfOf([1, 2, 3].map(tag));
+  const roster = new Set(history.map((position) => position.asset));
+  let state = begin(WALK, BAY, history, roster);
+
+  // The field submits itself when the last cell is filled, so a mis-keyed tag
+  // lands without a confirmation step. Undo is what makes that safe.
+  state = reduce(state, { kind: 'IDENTIFY', tag: tag(999999) });
+  assert.deepEqual([...state.newDevices], [tag(999999)]);
+
+  state = reduce(state, { kind: 'UNDO' });
+  assert.deepEqual([...state.newDevices], []);
+  assert.equal(state.confirmed.size, 0);
+});
+
 test('nothing is ever marked removed during a walk', () => {
   const history = shelfOf([1, 2, 3, 4, 5].map(tag));
   const roster = new Set(history.map((position) => position.asset));
@@ -241,3 +301,30 @@ test('a perfect auditor reconstructs exactly the mutation that was applied', () 
   }
 });
 
+
+test('undo unwinds any walk back to its starting state', () => {
+  for (let seed = 1; seed <= 100; seed++) {
+    const random = rng(seed);
+    const history = Array.from({ length: 5 + Math.floor(random() * 20) }, (_, i) => tag(i + 1));
+    const { shelf } = mutate(random, history);
+    const roster = new Set(history);
+    let state = begin(WALK, BAY, shelfOf(history), roster);
+
+    let events = 0;
+    for (const asset of shelf) {
+      const offset = windowOf(state).findIndex((position) => position.asset === asset);
+      state =
+        offset !== -1
+          ? reduce(state, { kind: 'CONFIRM', offset })
+          : reduce(state, { kind: 'IDENTIFY', tag: asset });
+      events += 1;
+    }
+    for (let i = 0; i < events; i++) state = reduce(state, { kind: 'UNDO' });
+
+    assert.equal(state.cursor, 0, `seed ${seed}`);
+    assert.equal(state.pile.size, 0, `seed ${seed}`);
+    assert.equal(state.confirmed.size, 0, `seed ${seed}`);
+    assert.deepEqual(state.newDevices, [], `seed ${seed}`);
+    assert.equal(state.previous, null, `seed ${seed}`);
+  }
+});

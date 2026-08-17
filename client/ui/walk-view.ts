@@ -9,7 +9,7 @@
 
 import { assetTag, tagShape } from '../core/types.js';
 import type { TagShape } from '../core/types.js';
-import { windowOf } from '../core/walk.js';
+import { lastConfirmed, windowOf } from '../core/walk.js';
 import type { Event, State } from '../core/walk.js';
 import { button, el, input, replace, tagLabel } from './dom.js';
 
@@ -65,6 +65,24 @@ export function renderWalk(
         )
       : '',
 
+    // The device just confirmed, faint and out of the way. It is there to be
+    // checked at a glance and taken back if it was a mis-tap — a wrong
+    // confirmation is otherwise silent, and nothing later in the walk reveals
+    // it. Undo rolls back one event, whatever that event was.
+    state.previous === null
+      ? ''
+      : el(
+          'section',
+          { class: 'last' },
+          el(
+            'div',
+            { class: 'row' },
+            el('span', { class: 'caption' }, 'Last confirmed'),
+            lastScanned(state),
+            button('Undo', () => handlers.dispatch({ kind: 'UNDO' }), 'quiet'),
+          ),
+        ),
+
     el(
       'section',
       { class: 'window' },
@@ -102,6 +120,13 @@ export function renderWalk(
   }
 }
 
+function lastScanned(state: State): HTMLElement {
+  const tag = lastConfirmed(state);
+  return tag === undefined
+    ? el('span', { class: 'empty' }, 'no device confirmed yet')
+    : tagLabel(tag);
+}
+
 // Everything this walk knows a tag can look like: the shelf as it was, plus
 // the assets the audit expects to find anywhere.
 function walkTags(state: State): string[] {
@@ -135,7 +160,6 @@ function tagEntry(shape: TagShape, handlers: WalkHandlers): HTMLElement {
     'aria-label': `Asset tag digits after ${shape.prefix || 'the prefix'}`,
   });
 
-  const submit = button('Enter', () => send(), 'primary wide');
   const track = el('div', { class: 'cells' }, caret, ...cells, field);
   track.style.setProperty('--n', String(shape.digits));
 
@@ -149,7 +173,6 @@ function tagEntry(shape: TagShape, handlers: WalkHandlers): HTMLElement {
     // between cells rather than blinking from one to the next.
     caret.style.setProperty('--i', String(Math.min(typed.length, shape.digits - 1)));
     caret.classList.toggle('done', typed.length >= shape.digits);
-    submit.toggleAttribute('disabled', tagOf(shape, typed) === null);
   };
 
   const send = (): void => {
@@ -168,7 +191,14 @@ function tagEntry(shape: TagShape, handlers: WalkHandlers): HTMLElement {
     const cleaned = field.value.replace(/[^0-9]/g, '').slice(0, shape.digits);
     if (cleaned !== field.value) field.value = cleaned;
     show();
+    // Filling the last cell is the submission. There is no button to press:
+    // the row is either complete or it is not, and a numeric keyboard on iOS
+    // has no return key to offer instead. A mis-typed tag is taken back with
+    // Undo, the same way a mis-tapped entry is.
+    if (cleaned.length === shape.digits) send();
   });
+  // Hardware keyboards only, and only useful where a site's tags vary in
+  // length so that a short one never fills the row.
   field.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') send();
   });
@@ -186,10 +216,6 @@ function tagEntry(shape: TagShape, handlers: WalkHandlers): HTMLElement {
       shape.prefix === '' ? '' : el('span', { class: 'sitecode' }, shape.prefix),
       track,
     ),
-    // Below the cells rather than beside them, so the cells get the whole row.
-    // A numeric keyboard on iOS has no return key, so this button is the only
-    // way to submit on the device the audit actually runs on.
-    submit,
   );
 }
 

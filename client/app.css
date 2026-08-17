@@ -174,9 +174,53 @@ button.wide {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-/* One field and one button: the only way to name a device that is not on
+/* The device just confirmed. Faint because it is there to be glanced at and
+   undone, not read — the walk's attention belongs on the window below it. The
+   Undo button stays at full strength: it has to be findable in a hurry. */
+.last {
+  display: flex;
+  margin-top: 0.75rem;
+}
+
+.last .row {
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Without this the faint tag at the top reads as another shelf entry rather
+   than as the one just recorded. */
+.caption {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  line-height: 1.1;
+  max-width: 4.5rem;
+  opacity: 0.55;
+}
+
+.last .tag {
+  font-size: 1.4rem;
+  opacity: 0.5;
+}
+
+.last .tag .prefix {
+  opacity: 0.5;
+}
+
+.last .empty {
+  opacity: 0.5;
+}
+
+.last button {
+  margin-left: auto;
+  min-height: 2.75rem;
+  padding: 0.4rem 1rem;
+}
+
+/* One field: the only way to name a device that is not on
    screen. It sits inline on the walk screen rather than behind a button, so
-   reaching it never costs a screen transition. */
+   reaching it never costs a screen transition, and it submits itself when the
+   last cell is filled. */
 .identify {
   border-top: 2px solid var(--line);
   margin-top: 1.5rem;
@@ -309,3 +353,10 @@ header + video {
   opacity: 0.8;
 }
 
+
+/* Present without competing: Undo is used rarely, but when it is needed it is
+   needed immediately, so it stays visible rather than hiding behind a menu. */
+button.quiet {
+  border-style: dashed;
+  opacity: 0.8;
+}
