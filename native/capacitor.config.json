@@ -1,0 +1,8 @@
+{
+  "appId": "au.edu.example.assetwalk",
+  "appName": "AssetWalk",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}

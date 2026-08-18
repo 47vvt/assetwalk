@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="AssetWalk">
+  <rect width="512" height="512" rx="96" fill="#0b5fa5"/>
+  <!-- Laptops stood on a shelf like books, which is the problem this solves. -->
+  <g fill="#fff">
+    <rect x="104" y="120" width="52" height="272" rx="14"/>
+    <rect x="180" y="120" width="52" height="272" rx="14"/>
+    <rect x="256" y="120" width="28" height="272" rx="12"/>
+    <rect x="308" y="120" width="28" height="272" rx="12"/>
+    <rect x="360" y="120" width="52" height="272" rx="14"/>
+  </g>
+</svg>

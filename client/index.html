@@ -24,6 +24,8 @@
         img-src 'self' blob:;
         media-src 'self' blob:;
         connect-src 'self';
+        manifest-src 'self';
+        worker-src 'self';
         form-action 'none';
         base-uri 'none'"
     />
@@ -33,6 +35,20 @@
       worse than none. It belongs in the response header the deployment sets,
       alongside HSTS.
     -->
+
+    <!--
+      Installed to a home screen on both platforms, which is what an auditor
+      launching this at a rack actually does. `standalone` drops the browser
+      chrome so the three actions are not competing with an address bar for
+      the bottom of the screen.
+    -->
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0b5fa5" />
+    <!-- iOS reads none of the manifest. These are its equivalents. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="AssetWalk" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
 
     <!-- Same-origin, so it needs no relaxation of img-src. -->
     <link rel="icon" href="./favicon.svg" />

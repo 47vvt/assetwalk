@@ -1,0 +1,19 @@
+{
+  "name": "assetwalk-native",
+  "version": "0.1.0",
+  "description": "Capacitor shell. The PWA in /client is the application; this only wraps it.",
+  "license": "Apache-2.0",
+  "private": true,
+  "scripts": {
+    "sync": "node ../scripts/stage-shell.mjs && cap sync",
+    "open:ios": "cap open ios",
+    "open:android": "cap open android"
+  },
+  "devDependencies": {
+    "@capacitor/android": "7.0.1",
+    "@capacitor/cli": "7.0.1",
+    "@capacitor/core": "7.0.1",
+    "@capacitor/haptics": "7.0.0",
+    "@capacitor/ios": "7.0.1"
+  }
+}

@@ -12,3 +12,8 @@ __pycache__/
 # Written by the deployment, never committed. It is the only file that carries
 # an instance hostname or client ID, which is why it is not in this repository.
 client/config.json
+
+# The shell's web directory is a copy of the built client, staged by
+# scripts/stage-shell.mjs. Committing it would be committing build output
+# twice — and a reviewer could not tell whether it matched /client.
+native/www/

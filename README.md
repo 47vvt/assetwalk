@@ -141,11 +141,16 @@ the claims, and how to check each one without taking anyone's word for it.
 |---|---|---|
 | Client runtime (npm) | **0** | `jq .dependencies package.json` |
 | Client dev (npm) | **1** — `typescript` | `jq .devDependencies package.json` |
+| Native shell dev (npm) | **5** — Capacitor, in its own package | `jq .devDependencies native/package.json` |
 | Client vendored files | **1** — `client/vendor/qr-encoder.ts` | `ls client/vendor` |
 | Backend direct | **3** — `fastapi`, `uvicorn`, `httpx` | `grep -A5 dependencies server/pyproject.toml` |
 | Backend transitive | 20 | `grep -c '^name = ' server/uv.lock` |
 
-CI asserts all of these on every run, so the table cannot rot quietly.
+CI asserts all of these on every run, so the table cannot rot quietly. It also
+asserts that Capacitor cannot reach the client's `package.json` and that no
+static `@capacitor` import appears in `/client` — the optional native shell is
+five dependencies in its own directory, and the thing a reviewer audits stays
+at one.
 
 ### The one vendored file
 
@@ -202,9 +207,10 @@ non-blank lines:
 | `client/io/server.ts` — fetches, offline queue | — | **147** |
 | `client/pdf` — writer and sheet layout | ~250 | **121** |
 | `client/platform` — capability adapters | ~150 | **125** |
-| `client/ui` + `main.ts` + demo fixture | — | **756** |
+| `client/ui` + `main.ts` + demo fixture | — | **791** |
+| `client/sw.js` — offline shell | — | **58** |
 | `server` — the whole backend | ~600 | **681** |
-| Tests (client 539, server 507) | — | **1046** |
+| Tests (client 595, server 507) | — | **1102** |
 
 More test code than application code in the parts where being wrong is silent.
 That is deliberate.
@@ -216,6 +222,44 @@ rebaselining: the number that matters is whether `/client/core`, where being
 wrong is silent, is still small. It is.
 
 ---
+
+## On a phone
+
+**iOS and Android run the PWA.** Install it from the browser's share sheet and
+it launches full-screen from the home screen:
+
+- A web app manifest with a maskable icon, because Android crops one without
+  it to a circle and takes a bite out of the artwork; iOS reads none of the
+  manifest, so it gets `apple-touch-icon` and the `apple-mobile-web-app-*` meta
+  tags instead.
+- Safe-area insets. Without them the header slides under the notch and Finish
+  sits under the home indicator — which is the button an auditor presses with
+  the phone in one hand.
+- `touch-action: manipulation`, so a double tap near the shelf entries is a
+  mis-tap rather than a zoom, and iOS stops delaying every tap by 300ms while
+  it waits to find out which. The tag field's hidden input is 16px, below which
+  iOS zooms the page on focus and never zooms back.
+
+**A service worker caches the shell**, so the app starts with the radio off —
+audits happen in warehouses and comms rooms with no signal, and an app that
+will not launch there does not work.
+
+It caches the shell and **nothing else**. Positional history is held in memory
+and never written to the device (§5), and a worker that cached an API response
+would keep a shelf's worth of asset tags long after the walk allowed to see
+them. `client/test/shell.test.ts` fails if that guard is removed. The one
+exception is `config.json`, network-first: it holds a backend path and a public
+client ID, no audit data, and without it an offline launch would fall back to
+the demo fixture and put an auditor on a shelf that does not exist.
+
+A walk already in progress keeps working offline and queues its confirmations.
+Starting one does not: the shelf has to be fetched, and it is never stored. The
+app says so rather than showing an empty screen.
+
+**A Capacitor shell exists** in `/native`, and nothing yet requires it — see
+`native/README.md` for the two things that would. Its five dependencies live in
+its own package so the client's count is unaffected, and the only permissions
+either platform project declares are the camera and network.
 
 ## Running it
 

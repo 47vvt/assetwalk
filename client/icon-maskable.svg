@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="AssetWalk">
+  <!-- Android crops maskable icons to an arbitrary shape and only guarantees
+       the central 80%, so the artwork is inset and the field runs edge to edge. -->
+  <rect width="512" height="512" fill="#0b5fa5"/>
+  <g fill="#fff">
+    <rect x="150" y="164" width="40" height="184" rx="11"/>
+    <rect x="208" y="164" width="40" height="184" rx="11"/>
+    <rect x="266" y="164" width="22" height="184" rx="9"/>
+    <rect x="306" y="164" width="22" height="184" rx="9"/>
+    <rect x="346" y="164" width="40" height="184" rx="11"/>
+  </g>
+</svg>

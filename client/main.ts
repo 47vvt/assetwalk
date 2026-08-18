@@ -62,18 +62,29 @@ function sync(): void {
 }
 
 async function load(): Promise<void> {
-  // No config.json at all means nobody has deployed this — it is a checkout
-  // being opened in a browser. Run on the fixture rather than failing, because
-  // that is what a reviewer does first and what gets demoed.
-  const config = await fetch('./config.json')
-    .then((response) => (response.ok ? response.json() : null))
-    .then((raw) => (raw === null ? null : parseConfig(raw)))
-    .catch(() => null);
+  // Three different answers, and they must not be confused. A 404 means
+  // nobody has deployed this — it is a checkout opened in a browser, so run
+  // the fixture. A network failure with nothing cached means a deployed app
+  // that has never been online, and falling back to the fixture there would
+  // put an auditor on a demo shelf without telling them.
+  const probe = await fetch('./config.json').then(
+    (response) => (response.ok ? response.json() : null),
+    () => 'unreachable' as const,
+  );
 
-  if (config === null) {
+  if (probe === 'unreachable') {
+    return unreachable(
+      'This device has not reached the server since the app was installed, so ' +
+        'it does not know which audit to load. Connect once and it will start ' +
+        'offline from then on.',
+    );
+  }
+
+  if (probe === null) {
     state = begin(DEMO_WALK, DEMO_LOCATION, DEMO_HISTORY, DEMO_ROSTER);
     return render();
   }
+  const config = parseConfig(probe);
 
   // A standalone SQLite deployment has nothing to sign in to, so it goes
   // straight to the audits. Otherwise sign-in is behind a button, because
@@ -105,9 +116,35 @@ async function route(): Promise<void> {
   const walk = walkID(params.get('walk') ?? '');
   const location = locationID(params.get('location') ?? '');
 
-  if (walk === null) return audits();
-  if (location === null) return shelves(walk);
-  return open(walk, location);
+  try {
+    if (walk === null) return await audits();
+    if (location === null) return await shelves(walk);
+    return await open(walk, location);
+  } catch (offline) {
+    // A shelf cannot be restored from cache: its positional history is held in
+    // memory only and never written to the device (§5), so reopening the app
+    // out of signal genuinely cannot resume it. Saying so is the job here —
+    // an empty screen would look like the app had crashed.
+    return unreachable(
+      'Cannot reach the server. A walk already in progress keeps working and ' +
+        'its confirmations are queued, but starting one needs the shelf, and ' +
+        'the shelf is never stored on the device.',
+    );
+  }
+}
+
+function unreachable(why: string): void {
+  replace(
+    host,
+    el('header', {}, el('h1', {}, 'No connection')),
+    el('p', {}, why),
+    el(
+      'p',
+      { class: 'empty' },
+      pendingCount() > 0 ? `${pendingCount()} shelves are queued and will send when it returns.` : '',
+    ),
+    button('Try again', () => void route(), 'finish wide'),
+  );
 }
 
 function go(params: string): void {
@@ -321,6 +358,18 @@ function offerSheets(walk: WalkID, location: LocationID, walked: readonly AssetT
     if (backend !== null) queueSheets(location, sheets);
     sync();
     complete(walk, location, walked);
+  });
+}
+
+// Registered after the first render, so a failure to install the offline
+// shell never stops the app starting. Absent in the fixture path too — a
+// checkout opened from a file:// URL has no worker scope.
+if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('./sw.js').catch(() => {
+      // An audit does not need the offline shell to run today; it needs the
+      // walk to start. Nothing here is worth interrupting that for.
+    });
   });
 }
 

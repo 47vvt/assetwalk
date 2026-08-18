@@ -24,14 +24,32 @@
   box-sizing: border-box;
 }
 
+html {
+  /* iOS enlarges text in landscape unless told not to, which silently breaks
+     the cell widths the tag field depends on. */
+  -webkit-text-size-adjust: 100%;
+  /* Installed to a home screen there is no address bar to scroll away, and a
+     rubber-band bounce under a live viewfinder reads as the app coming apart. */
+  overscroll-behavior-y: none;
+}
+
 body {
   margin: 0;
-  padding: 0 1rem 4rem;
+  /* The notch, the rounded corners and the home indicator. Without these the
+     header slides under the status bar and Finish sits under the gesture bar,
+     which is the button an auditor presses with the phone in one hand. */
+  padding:
+    env(safe-area-inset-top) calc(1rem + env(safe-area-inset-right))
+    calc(4rem + env(safe-area-inset-bottom)) calc(1rem + env(safe-area-inset-left));
   background: var(--paper);
   color: var(--ink);
   font: 16px/1.4 system-ui, sans-serif;
   max-width: 40rem;
   margin-inline: auto;
+  /* A double tap near the window entries is a mis-tap, not a request to zoom,
+     and iOS delays every tap by 300ms while it waits to find out which. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 header {
@@ -66,6 +84,12 @@ button {
   font: inherit;
   color: inherit;
   background: transparent;
+  /* Long-pressing a shelf entry should not select its text or raise iOS's
+     callout menu — the auditor is tapping, not reading. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-appearance: none;
+  appearance: none;
   border: 2px solid var(--line);
   border-radius: 0.5rem;
   /* Thumb-sized: mis-taps are silent corruption, and Undo is one extra step
@@ -313,9 +337,16 @@ button.wide {
   inset: 0;
   width: 100%;
   opacity: 0;
+  /* Anything under 16px makes iOS zoom the page the moment the field is
+     focused, and it never zooms back out. The text is invisible either way —
+     the cells above are what is read — so this costs nothing. */
   font: inherit;
+  font-size: 16px;
   border: 0;
+  border-radius: 0;
   padding: 0;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 button[disabled] {
@@ -424,7 +455,10 @@ button.quiet {
 .nameinput {
   width: 100%;
   font: inherit;
+  /* Comfortably over the 16px below which iOS zooms on focus. */
   font-size: 1.5rem;
+  -webkit-appearance: none;
+  appearance: none;
   color: inherit;
   background: transparent;
   border: 2px solid var(--accent);

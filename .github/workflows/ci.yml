@@ -24,6 +24,8 @@ jobs:
 
       # The dependency count is a claim the README makes and a stranger should
       # be able to check in thirty seconds. This is that check, automated.
+      # The native shell has its own package and its own five, deliberately:
+      # a browser build must never be able to pull Capacitor in.
       - name: Assert the client has one dev dependency and no runtime ones
         run: |
           node -e '
@@ -46,6 +48,35 @@ jobs:
           echo "vendored file:    $vendored"
           test "$upstream" = 1dc03fb5a10e0e2318ea162755bbdb9977ca6ce52cff959e9c9b6deafdccda9c
           test "$vendored" = 7e8cc4ebc98076bcca52fa0ecfa4b4ffe3da60539a8dc2c36e2f01afb88b95d5
+
+      - name: Assert the native shell cannot leak into the client
+        run: |
+          node -e '
+            const client = require("./package.json");
+            const declared = JSON.stringify({ ...client.dependencies, ...client.devDependencies });
+            if (declared.includes("@capacitor")) throw new Error("Capacitor reached the client package");
+            const shell = require("./native/package.json");
+            if (Object.keys(shell.dependencies ?? {}).length) throw new Error("shell runtime deps");
+            const names = Object.keys(shell.devDependencies).sort().join(",");
+            const want = "@capacitor/android,@capacitor/cli,@capacitor/core,@capacitor/haptics,@capacitor/ios";
+            if (names !== want) throw new Error(`shell deps: ${names}`);
+          '
+          # The browser build must not import Capacitor statically — §16 puts
+          # every native call behind a dynamic import so the web build never
+          # even fetches it.
+          if grep -rn "^import .*@capacitor" client --include=*.ts; then
+            echo "Capacitor must only be reached through a dynamic import" >&2
+            exit 1
+          fi
+
+      - name: Assert the app declares only the permissions it uses
+        run: |
+          # Camera, for reading barcodes, and network. Anything else appearing
+          # here is a question somebody has to answer before it ships.
+          granted=$(grep -o 'android.permission.[A-Z_]*' native/android/app/src/main/AndroidManifest.xml | sort -u)
+          expected=$(printf 'android.permission.CAMERA\nandroid.permission.INTERNET')
+          test "$granted" = "$expected" || { echo "permissions changed:"; echo "$granted"; exit 1; }
+          grep -q NSCameraUsageDescription native/ios/App/App/Info.plist
 
       - run: npm run build
       - run: npm test
