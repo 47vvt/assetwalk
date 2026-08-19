@@ -224,8 +224,8 @@ class SqlStore:
         history: list[Position],
         orientation: str = "vertical",
     ) -> None:
-        for position in {p.location for p in history}:
-            self.add_location(walk_id, Location(id=position, orientation=orientation))
+        for location_id in {p.location for p in history}:
+            self.add_location(walk_id, Location(id=location_id, orientation=orientation))
         with self.db:
             for position in history:
                 self.db.execute(

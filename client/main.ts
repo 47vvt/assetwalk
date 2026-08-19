@@ -1,37 +1,35 @@
-// App shell: fetches one shelf, runs the walk, sends the result, forgets the
-// shelf. The order of those last two is the point of §5 — the history slice
-// exists in this module's local variables and nowhere else, and it is dropped
-// the moment the confirmations are safely queued.
+// The app shell: work out what has been deployed, sign in if there is anything
+// to sign in to, and put the right screen on the URL that asks for it.
+//
+// Walking a shelf is not here — that is session.ts, which owns the only state
+// this app keeps and drops it as soon as it can. What is left is navigation,
+// which is deliberately made of URLs: a walk in progress survives a reload, a
+// shelf can be linked to, and the back button does what it looks like it does.
 
-import { assetTag, locationID, walkID } from './core/types.js';
+import { locationID, walkID } from './core/types.js';
 import type { AssetTag, LocationID, WalkID } from './core/types.js';
-import { begin, reduce, result } from './core/walk.js';
-import type { Event, State } from './core/walk.js';
-import { parseConfig } from './io/parse.js';
+import type { ShelfResult } from './core/walk.js';
+import { parseConfig } from './io/config.js';
 import { oauthFrom, signIn } from './io/auth.js';
+import { drain, pendingCount, queueSheets, queueShelf } from './io/outbox.js';
 import {
   addLocation,
   createWalk,
-  drain,
   fetchHistory,
   fetchLocations,
   fetchRoster,
   fetchWalks,
-  pendingCount,
-  queueSheets,
-  queueShelf,
   removeLocation,
 } from './io/server.js';
 import type { Backend } from './io/server.js';
-import { confirmScan, rejectScan } from './platform/haptics.js';
-import { openCamera, scanningAvailable } from './platform/scanner.js';
-import type { Camera } from './platform/scanner.js';
+import { abandonWalk, startWalk } from './session.js';
 import { DEMO_HISTORY, DEMO_LOCATION, DEMO_ROSTER, DEMO_WALK } from './demo-shelf.js';
-import { button, el, replace } from './ui/dom.js';
-import { renderAudits, renderNewAudit, renderShelves } from './ui/audits-view.js';
+import { button, el } from './ui/dom.js';
+import { renderAudits } from './ui/audits-view.js';
+import { renderNewAudit } from './ui/new-audit-view.js';
+import { renderNotice } from './ui/notice-view.js';
 import { renderSheets } from './ui/sheets-view.js';
-import { renderScan } from './ui/scan-view.js';
-import { renderWalk } from './ui/walk-view.js';
+import { renderShelves } from './ui/shelves-view.js';
 
 const host = window.document.body;
 
@@ -39,14 +37,6 @@ const host = window.document.body;
 // guarded on it, so opening index.html with no walk in the URL makes no
 // requests at all — which is what a reviewer opens and what gets demoed.
 let backend: Backend | null = null;
-let state: State | null = null;
-let misses = 0;
-// Non-null exactly while the scan screen is up. Scanning is a screen, not an
-// overlay: the camera replaces the window, and every event re-renders whichever
-// screen the auditor is actually on.
-let camera: Camera | null = null;
-let ambiguous: readonly string[] = [];
-let torch = false;
 let syncing = false;
 
 // One drain loop at a time. Each shelf completion would otherwise start
@@ -81,8 +71,13 @@ async function load(): Promise<void> {
   }
 
   if (probe === null) {
-    state = begin(DEMO_WALK, DEMO_LOCATION, DEMO_HISTORY, DEMO_ROSTER);
-    return render();
+    const demo = {
+      walk: DEMO_WALK,
+      location: DEMO_LOCATION,
+      history: DEMO_HISTORY,
+      roster: DEMO_ROSTER,
+    };
+    return startWalk(host, demo, complete);
   }
   const config = parseConfig(probe);
 
@@ -96,22 +91,23 @@ async function load(): Promise<void> {
   }
 
   const { instance, clientID } = config.oauth;
-  replace(
-    host,
-    el('header', {}, el('h1', {}, 'AssetWalk')),
-    button('Sign in', () => void start(config.backend, instance, clientID), 'finish wide'),
-  );
+  const authorise = () => void signedIn(config.backend, instance, clientID);
+  renderNotice(host, 'AssetWalk', [], [button('Sign in', authorise, 'finish wide')]);
 }
 
-async function start(base: string, instance: string, clientID: string): Promise<void> {
+async function signedIn(base: string, instance: string, clientID: string): Promise<void> {
   const callback = new URL('./callback.html', window.location.href).href;
   backend = { base, token: await signIn(oauthFrom(instance, clientID, callback)) };
   return route();
 }
 
-// The URL is the screen. A walk in progress survives a reload, a shelf can be
-// linked to, and the back button does what it looks like it does.
+// Which screen the URL is asking for: no walk is the audit list, a walk is its
+// shelves, a walk and a location is that shelf being walked.
 async function route(): Promise<void> {
+  // Any walk that was on screen is not any more, and its camera has to be
+  // turned off whether it was finished or navigated away from.
+  abandonWalk();
+
   const params = new URLSearchParams(window.location.search);
   const walk = walkID(params.get('walk') ?? '');
   const location = locationID(params.get('location') ?? '');
@@ -119,8 +115,8 @@ async function route(): Promise<void> {
   try {
     if (walk === null) return await audits();
     if (location === null) return await shelves(walk);
-    return await open(walk, location);
-  } catch (offline) {
+    return await openShelf(walk, location);
+  } catch {
     // A shelf cannot be restored from cache: its positional history is held in
     // memory only and never written to the device (§5), so reopening the app
     // out of signal genuinely cannot resume it. Saying so is the job here —
@@ -133,20 +129,6 @@ async function route(): Promise<void> {
   }
 }
 
-function unreachable(why: string): void {
-  replace(
-    host,
-    el('header', {}, el('h1', {}, 'No connection')),
-    el('p', {}, why),
-    el(
-      'p',
-      { class: 'empty' },
-      pendingCount() > 0 ? `${pendingCount()} shelves are queued and will send when it returns.` : '',
-    ),
-    button('Try again', () => void route(), 'finish wide'),
-  );
-}
-
 function go(params: string): void {
   window.history.pushState(null, '', params === '' ? window.location.pathname : `?${params}`);
   void route();
@@ -157,17 +139,17 @@ function go(params: string): void {
 // the screen it was already on.
 window.addEventListener('popstate', () => void route());
 
-async function audits(): Promise<void> {
-  if (backend === null) return;
-  renderAudits(host, await fetchWalks(backend), auditHandlers);
-}
-
 const auditHandlers = {
   open: (walk: WalkID) => go(`walk=${encodeURIComponent(walk)}`),
   compose: () => renderNewAudit(host, auditHandlers),
   create: (walk: WalkID) => void createAudit(walk),
   cancel: () => void audits(),
 };
+
+async function audits(): Promise<void> {
+  if (backend === null) return;
+  renderAudits(host, await fetchWalks(backend), auditHandlers);
+}
 
 async function createAudit(walk: WalkID): Promise<void> {
   if (backend === null) return;
@@ -184,181 +166,100 @@ async function shelves(walk: WalkID): Promise<void> {
   const audit = walks.find((candidate) => candidate.id === walk);
   if (audit === undefined) return audits();
 
+  // Adding and removing re-fetch rather than patching the list on screen: the
+  // backend decides what an audit covers, and a shelf list that disagreed with
+  // it would send an auditor to a rack that is no longer in scope.
+  const reload = async (edit: Promise<void>): Promise<void> => {
+    await edit;
+    await shelves(walk);
+  };
+
   renderShelves(host, audit, known, {
     walk: (location) =>
       go(`walk=${encodeURIComponent(walk)}&location=${encodeURIComponent(location)}`),
-    add: (id, orientation) => void change(walk, () => addLocation(here, walk, { id, orientation })),
-    remove: (location) => void change(walk, () => removeLocation(here, walk, location)),
+    add: (id, orientation) => void reload(addLocation(here, walk, { id, orientation })),
+    remove: (location) => void reload(removeLocation(here, walk, location)),
     back: () => go(''),
   });
 }
 
-async function change(walk: WalkID, edit: () => Promise<void>): Promise<void> {
-  await edit();
-  await shelves(walk);
-}
-
-async function open(walk: WalkID, location: LocationID): Promise<void> {
+async function openShelf(walk: WalkID, location: LocationID): Promise<void> {
   if (backend === null) return;
   const [roster, history] = await Promise.all([
     fetchRoster(backend, walk),
     fetchHistory(backend, location),
   ]);
-  state = begin(walk, location, history, new Set(roster.map((entry) => entry.asset)));
-  render();
+  const expected = new Set(roster.map((entry) => entry.asset));
+  startWalk(host, { walk, location, history, roster: expected }, complete);
 }
 
-function dispatch(event: Event): void {
-  if (state === null) return;
-  // The stall nudge counts consecutive unrecognised devices. It lives here and
-  // not in the reducer on purpose: it is a hint about the auditor, and it must
-  // never influence how a device is classified.
-  misses = event.kind === 'IDENTIFY' ? misses + 1 : 0;
-  state = reduce(state, event);
-  render();
-}
-
-function render(): void {
-  if (state === null) return;
-  // The same three actions on both screens; only the first one's job differs.
-  const handlers = {
-    dispatch,
-    toggleScan: () => (camera === null ? void openScan() : closeScan()),
-    finish: () => void finish(),
-  };
-
-  if (camera !== null) {
-    const live = camera;
-    renderScan(host, state, live, torch, ambiguous, {
-      ...handlers,
-      choose: (value) => {
-        ambiguous = [];
-        accept(value);
-      },
-      toggleTorch: () => {
-        torch = !torch;
-        render();
-        void live.setTorch(torch).catch(() => {
-          // A device can advertise the torch constraint and still refuse it.
-          // Put the label back rather than leaving it claiming a light that
-          // is not on.
-          torch = false;
-          render();
-        });
-      },
-    });
-    return;
+// The shelf is over and its history is already gone. What is left is the
+// confirmations, which are queued rather than sent, because the auditor is
+// usually still in the room they had no signal in.
+function complete(shelf: ShelfResult): void {
+  if (backend !== null) {
+    queueShelf(shelf);
+    sync();
   }
-  renderWalk(host, state, misses, pendingCount(), handlers);
+  showComplete(shelf.walk, shelf.location, shelf.confirmed);
 }
 
-// One barcode read locates the cursor in history definitively, which is why
-// this is a screen of its own rather than an item in a menu: it is where an
-// auditor goes when they have lost their place, and where they stay until they
-// have found it again.
-async function openScan(): Promise<void> {
-  if (!scanningAvailable()) {
-    replace(
-      host,
-      el('header', {}, el('h1', {}, 'Scanning unavailable')),
-      el(
-        'p',
-        {},
-        'This browser has no barcode reader. Type the tag from the note instead — ' +
-          'the walk does not need a barcode to finish.',
-      ),
-      button('Back', render, 'primary'),
-    );
-    return;
-  }
-
-  camera = await openCamera((event) => {
-    if (event.kind === 'AMBIGUOUS') {
-      rejectScan();
-      ambiguous = event.values;
-      render();
-      return;
-    }
-    ambiguous = [];
-    accept(event.value);
-  });
-  render();
-}
-
-function closeScan(): void {
-  stopCamera();
-  render();
-}
-
-function stopCamera(): void {
-  camera?.stop();
-  camera = null;
-  ambiguous = [];
-  torch = false;
-}
-
-function accept(raw: string): void {
-  const tag = assetTag(raw);
-  if (tag === null) {
-    rejectScan();
-    return;
-  }
-  void confirmScan();
-  dispatch({ kind: 'IDENTIFY', tag });
-}
-
-async function finish(): Promise<void> {
-  if (state === null) return;
-  const finished = result(state);
-  const walked = [...finished.confirmed];
-  const walk = state.walk;
-  const location = state.location;
-
-  // Finish is reachable from the scan screen too, so the camera is released
-  // before the walk state it belongs to goes away.
-  stopCamera();
-  if (backend !== null) queueShelf(finished);
-  // The history slice is dropped here: immediately after the confirmations are
-  // durable, and before anything else can take a reference to it. The device
-  // now holds one shelf's worth of tags rather than the site's.
-  state = null;
-  sync();
-
-  complete(walk, location, walked);
-}
-
-function complete(walk: WalkID, location: LocationID, walked: readonly AssetTag[]): void {
-  replace(
+function showComplete(walk: WalkID, location: LocationID, walked: readonly AssetTag[]): void {
+  renderNotice(
     host,
-    el('header', {}, el('h1', {}, `${location} complete`)),
-    el(
-      'p',
-      {},
+    `${location} complete`,
+    [
       backend === null
         ? `${walked.length} devices confirmed. Standalone demo — nothing was sent anywhere.`
         : `${walked.length} devices confirmed and queued.`,
-    ),
-    // What could not be accounted for is deliberately not shown and not asked
-    // about. Whether a tag is a removal depends on every other shelf in the
-    // audit, which this device does not have and is not going to be given —
-    // the variance report is produced once the whole walk is in.
-    el('p', { class: 'empty' }, 'Anything unaccounted for is settled audit-wide, after every shelf is in.'),
-    // A horizontal stack is walked with the same reducer; all that differs is
-    // what happens at the end, because Algorithm 2's mechanism is the paper.
-    button('Print QR sheets for this stack', () => offerSheets(walk, location, walked), 'primary'),
-    // The fixture has no audit behind it and so nowhere to go back to.
-    backend === null
-      ? ''
-      : button('Back to shelves', () => go(`walk=${encodeURIComponent(walk)}`), 'finish'),
+      // What could not be accounted for is deliberately not shown and not
+      // asked about. Whether a tag is a removal depends on every other shelf
+      // in the audit, which this device does not have and is not going to be
+      // given — the variance report is produced once the whole walk is in.
+      el(
+        'p',
+        { class: 'empty' },
+        'Anything unaccounted for is settled audit-wide, after every shelf is in.',
+      ),
+    ],
+    [
+      // A horizontal stack is walked with the same reducer; all that differs is
+      // what happens at the end, because Algorithm 2's mechanism is the paper.
+      button('Print QR sheets for this stack', () => sheets(walk, location, walked), 'primary wide'),
+      // The fixture has no audit behind it and so nowhere to go back to.
+      backend === null
+        ? ''
+        : button('Back to shelves', () => go(`walk=${encodeURIComponent(walk)}`), 'finish wide'),
+    ],
   );
 }
 
-function offerSheets(walk: WalkID, location: LocationID, walked: readonly AssetTag[]): void {
+function sheets(walk: WalkID, location: LocationID, walked: readonly AssetTag[]): void {
   renderSheets(host, walk, location, walked, (sheets) => {
-    if (backend !== null) queueSheets(location, sheets);
-    sync();
-    complete(walk, location, walked);
+    if (backend !== null) {
+      queueSheets(location, sheets);
+      sync();
+    }
+    showComplete(walk, location, walked);
   });
+}
+
+function unreachable(why: string): void {
+  renderNotice(
+    host,
+    'No connection',
+    [
+      why,
+      pendingCount() === 0
+        ? ''
+        : el(
+            'p',
+            { class: 'empty' },
+            `${pendingCount()} shelves are queued and will send when it returns.`,
+          ),
+    ],
+    [button('Try again', () => void route(), 'finish wide')],
+  );
 }
 
 // Registered after the first render, so a failure to install the offline

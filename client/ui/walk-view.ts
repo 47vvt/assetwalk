@@ -8,9 +8,9 @@
 
 import { windowOf } from '../core/walk.js';
 import type { State } from '../core/walk.js';
-import { button, el, replace, tagLabel } from './dom.js';
-import { actions, lastRow, restoreFocus, tagField } from './entry.js';
-import type { Actions } from './entry.js';
+import { button, el, tagLabel } from './dom.js';
+import { renderWalkScreen } from './walk-frame.js';
+import type { Actions } from './walk-frame.js';
 
 // After three unrecognised devices in a row the auditor is more likely on the
 // wrong shelf than looking at three unknown devices. This is a nudge to
@@ -26,63 +26,46 @@ export function renderWalk(
   handlers: Actions,
 ): void {
   const upcoming = windowOf(state);
-  const ahead = state.history.length - state.cursor;
 
-  replace(
-    host,
+  const windowSection = el(
+    'section',
+    { class: 'window' },
     el(
-      'header',
-      {},
-      el('h1', {}, state.location),
-      el(
-        'span',
-        { class: 'progress' },
-        `${state.confirmed.size} done${ahead > 0 ? ` · ${ahead} ahead` : ''}`,
-      ),
-      pending > 0 ? el('span', { class: 'pending' }, `${pending} queued`) : '',
+      'h2',
+      { class: 'lead' },
+      upcoming.length > 0 ? 'Tap the device in your hand' : 'End of this shelf',
     ),
-
-    misses >= STALL_LIMIT
+    ...upcoming.map((position, offset) =>
+      button(
+        el('span', { class: 'row' }, tagLabel(position.asset)),
+        () => handlers.dispatch({ kind: 'CONFIRM', offset }),
+        'entry',
+      ),
+    ),
+    upcoming.length === 0
       ? el(
+          'p',
+          { class: 'empty' },
+          'Nothing left in the recorded order. Anything still on the shelf is ' +
+            'either new or has moved — type its tag below.',
+        )
+      : '',
+  );
+
+  const nudge =
+    misses < STALL_LIMIT
+      ? ''
+      : el(
           'p',
           { class: 'nudge' },
           'Three unrecognised devices in a row. Scan a barcode to re-anchor, ' +
             'or check you are on the right shelf.',
-        )
-      : '',
+        );
 
-    lastRow(state),
-
-    el(
-      'section',
-      { class: 'window' },
-      el(
-        'h2',
-        { class: 'lead' },
-        upcoming.length > 0 ? 'Tap the device in your hand' : 'End of this shelf',
-      ),
-      ...upcoming.map((position, offset) =>
-        button(
-          el('span', { class: 'row' }, tagLabel(position.asset)),
-          () => handlers.dispatch({ kind: 'CONFIRM', offset }),
-          'entry',
-        ),
-      ),
-      upcoming.length === 0
-        ? el(
-            'p',
-            { class: 'empty' },
-            'Nothing left in the recorded order. Anything still on the shelf is ' +
-              'either new or has moved — type its tag below.',
-          )
-        : '',
-    ),
-
-    tagField(state, handlers.dispatch),
-
-    actions(state, false, handlers),
+  renderWalkScreen(
+    host,
+    state,
+    { notice: nudge, middle: [windowSection], scanning: false, pending },
+    handlers,
   );
-
-  restoreFocus();
 }
-

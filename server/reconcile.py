@@ -40,11 +40,9 @@ def reconcile(shelves: list[ShelfResult]) -> Reconciliation:
                     Relocation(asset=asset, expected_at=shelf.location, found_at=where)
                 )
 
-    # A device confirmed somewhere is found, whatever else any shelf says about
-    # it, so anything that turned up is dropped from the candidate list.
-    new_devices = sorted(
-        {asset for shelf in walked for asset in shelf.new_devices}
-    )
+    # Deduplicated across shelves: a device that moved between two shelves
+    # mid-audit is reported by both, and it is still one device.
+    new_devices = sorted({asset for shelf in walked for asset in shelf.new_devices})
 
     return Reconciliation(
         relocated=relocated,

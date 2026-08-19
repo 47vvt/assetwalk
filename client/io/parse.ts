@@ -1,8 +1,11 @@
-// The validation boundary. Types are erased at runtime, so every value
-// crossing into the app — API responses, QR payloads, URL params, config — is
-// parsed here and nowhere else. Failure throws by design: a changed backend
-// schema must stop the walk loudly, not propagate `undefined` into the reducer
-// and quietly corrupt an audit record.
+// The validation boundary. Types are erased at runtime, so every value the
+// backend sends is checked here, against the branded types in /client/core,
+// before anything else in the app sees it. Failure throws by design: a changed
+// backend schema must stop the walk loudly, not propagate `undefined` into the
+// reducer and quietly corrupt an audit record.
+//
+// The small checkers below are shared with config.ts, which is the same job
+// for the one file the deployment writes.
 
 import { assetTag, locationID, walkID } from '../core/types.js';
 import type { AssetTag, LocationID, Position, RosterEntry, WalkID } from '../core/types.js';
@@ -13,12 +16,12 @@ function fail(path: string, value: unknown): never {
   throw new BoundaryError(`${path}: unexpected ${JSON.stringify(value) ?? typeof value}`);
 }
 
-function field(record: unknown, path: string, key: string): unknown {
+export function field(record: unknown, path: string, key: string): unknown {
   if (typeof record !== 'object' || record === null) fail(path, record);
   return (record as Record<string, unknown>)[key];
 }
 
-function str(record: unknown, path: string, key: string): string {
+export function str(record: unknown, path: string, key: string): string {
   const value = field(record, path, key);
   return typeof value === 'string' ? value : fail(`${path}.${key}`, value);
 }
@@ -56,43 +59,6 @@ export function parseRoster(raw: unknown): RosterEntry[] {
       location: at === null ? null : place(entry, `roster[${i}]`, 'location'),
     };
   });
-}
-
-export function parseWalkID(raw: string | null): WalkID {
-  return walkID(raw ?? '') ?? fail('walk', raw);
-}
-
-export interface Config {
-  readonly backend: string;
-  // Absent in standalone deployments. A SQLite backend has no ServiceNow
-  // instance to authenticate against, and putting a sign-in step in front of
-  // it would be theatre — there would be nothing on the other side of it.
-  readonly oauth: { readonly instance: string; readonly clientID: string } | null;
-}
-
-// Fetched at runtime from a file the deployment writes. No instance hostname,
-// client ID or origin appears in this repository, and none can: the file is
-// not committed, and this is the only code that reads one.
-export function parseConfig(raw: unknown): Config {
-  const backend = str(raw, 'config', 'backend');
-  if (field(raw, 'config', 'instance') === undefined) return { backend, oauth: null };
-
-  const instance = str(raw, 'config', 'instance');
-  parseInstanceURL(instance);
-  return { backend, oauth: { instance, clientID: str(raw, 'config', 'clientID') } };
-}
-
-// PKCE defends against an attacker who captures the redirect but is not on the
-// network path. Over plaintext it defends against nothing, so a non-HTTPS
-// instance is rejected outright rather than warned about. `http://localhost`
-// is the standard development exemption and the only one.
-export function parseInstanceURL(raw: string): URL {
-  const url = new URL(raw);
-  const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local)) {
-    throw new BoundaryError(`instance URL must be https: ${raw}`);
-  }
-  return url;
 }
 
 export interface Location {

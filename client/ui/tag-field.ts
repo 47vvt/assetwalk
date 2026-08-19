@@ -1,23 +1,14 @@
-// The parts of the walk that do not change when the camera comes on: the
-// device just confirmed, the field for naming one that is not on screen, and
-// the row of actions underneath.
+// Typing the tag off a device's sticky note.
 //
-// Scanning is a mode of the walk, not a different job, so both screens are the
-// same screen with a different middle. Keeping these here is what makes that
-// true rather than merely intended — two copies would drift, and then the walk
-// would record different things depending on which screen the auditor happened
-// to be looking at.
+// One field, and no list of what the audit already knows. Whether the typed
+// tag belongs to a device from the last walk or to one nobody has seen before
+// is the reducer's problem, and showing the auditor the shelf's history only
+// invites them to answer a question the algorithm exists to avoid asking.
 
 import { assetTag, tagShape } from '../core/types.js';
-import { lastConfirmed } from '../core/walk.js';
-import type { Event, State } from '../core/walk.js';
-import { button, el, input, tagLabel } from './dom.js';
-
-export interface Actions {
-  readonly dispatch: (event: Event) => void;
-  readonly toggleScan: () => void;
-  readonly finish: () => void;
-}
+import type { State } from '../core/walk.js';
+import type { Event } from '../core/walk.js';
+import { el, input } from './dom.js';
 
 // Every screen is rebuilt on every event, which destroys the field along with
 // everything else. An auditor working through a run of unrecognised devices
@@ -26,41 +17,19 @@ export interface Actions {
 const FIELD_ID = 'tag-entry';
 let refocus = false;
 
+// Called by whoever rebuilt the screen, once the new field is in the document.
 export function restoreFocus(): void {
   if (!refocus) return;
   refocus = false;
   window.document.getElementById(FIELD_ID)?.focus();
 }
 
-// The device just confirmed, faint and out of the way. It is there to be
-// checked at a glance, not read: a wrong confirmation is otherwise silent, and
-// nothing later in the walk reveals it.
-export function lastRow(state: State): HTMLElement | string {
-  if (state.previous === null) return '';
-  const tag = lastConfirmed(state);
-  return el(
-    'section',
-    { class: 'last' },
-    el(
-      'div',
-      { class: 'row' },
-      el('span', { class: 'caption' }, 'Last confirmed'),
-      tag === undefined ? el('span', { class: 'empty' }, 'nothing yet') : tagLabel(tag),
-    ),
-  );
-}
-
-// One field, and no list of what the audit already knows. Whether the typed
-// tag is a device from the last walk or one nobody has seen before is the
-// reducer's problem, and showing the auditor the shelf's history only invites
-// them to answer a question the algorithm exists to avoid asking.
-//
-// The prefix is a label, not something to type — it is identical on every
-// device in the building. What is left is the digits, in one cell each, so the
-// auditor can check what they entered against a handwritten note at a glance
-// instead of reading back a run of identical-looking numerals.
+// The prefix is a label rather than something to type — it is identical on
+// every device in the building. What is left is the digits, in one cell each,
+// so the auditor can check what they entered against a handwritten note at a
+// glance instead of reading back a run of identical-looking numerals.
 export function tagField(state: State, dispatch: (event: Event) => void): HTMLElement {
-  const shape = tagShape([...state.roster, ...state.history.map((p) => p.asset)]);
+  const shape = tagShape([...state.roster, ...state.history.map((position) => position.asset)]);
   const cells = Array.from({ length: shape.digits }, () => el('span', { class: 'cell' }));
   const caret = el('span', { class: 'caret' });
 
@@ -134,32 +103,4 @@ export function tagField(state: State, dispatch: (event: Event) => void): HTMLEl
       track,
     ),
   );
-}
-
-// The same three actions in the same places on both screens. Only the first
-// one's label and job change with the mode: an auditor who has learned where
-// Undo is should not have to learn again because the camera is on.
-export function actions(state: State, scanning: boolean, handlers: Actions): HTMLElement {
-  return el(
-    'nav',
-    {},
-    button(
-      scanning ? 'Stop scanning' : 'Scan a barcode',
-      handlers.toggleScan,
-      scanning ? 'primary' : '',
-    ),
-    undoButton(state, handlers.dispatch),
-    button('Finish shelf', handlers.finish, 'finish wide'),
-  );
-}
-
-// One undo, and it takes back whatever the last action was — a tapped entry, a
-// typed tag, a scan.
-function undoButton(state: State, dispatch: (event: Event) => void): HTMLElement {
-  const node = button('Undo last action', () => dispatch({ kind: 'UNDO' }), 'quiet');
-  // Nothing has happened yet, so there is nothing to take back. Disabled
-  // rather than hidden: a control that appears and disappears is one the
-  // auditor has to find again each time.
-  if (state.previous === null) node.setAttribute('disabled', '');
-  return node;
 }

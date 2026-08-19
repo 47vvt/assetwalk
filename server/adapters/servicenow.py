@@ -174,6 +174,7 @@ class ServiceNowStore:
                 f"/api/now/table/{SHEET_TABLE}",
                 json={
                     "u_sheet_id": sheet.id,
+                    "u_audit": sheet.walk,
                     "u_location": sheet.location,
                     "u_member_tags": ",".join(sheet.members),
                     "u_count": len(sheet.members),
@@ -185,12 +186,12 @@ class ServiceNowStore:
         rows = self._table(
             SHEET_TABLE,
             sysparm_query=f"u_location={location_id}",
-            sysparm_fields="u_sheet_id,u_location,u_member_tags,u_printed_at",
+            sysparm_fields="u_sheet_id,u_audit,u_location,u_member_tags,u_printed_at",
         )
         return [
             Sheet(
                 id=row["u_sheet_id"],
-                walk=location_id,
+                walk=_display(row["u_audit"]),
                 location=_display(row["u_location"]),
                 printed_at=row["u_printed_at"],
                 members=[tag for tag in row["u_member_tags"].split(",") if tag],

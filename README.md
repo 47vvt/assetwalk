@@ -196,30 +196,44 @@ an instance hostname appears anywhere in the tree.
 ### Size
 
 The volume of code is itself part of the threat surface: a reviewer's attention
-is finite, and code they skim is code they have not audited. Non-comment,
-non-blank lines:
+is finite, and code they skim is code they have not audited. Lines that are
+neither blank nor comment-only — run it yourself:
+
+```sh
+cat client/core/*.ts | grep -cvE '^[[:space:]]*(//|/\*|\*|$)'
+cat server/*.py server/adapters/*.py | grep -cvE '^[[:space:]]*(#|$)'
+```
 
 | Component | Budget | Actual |
 |---|---|---|
 | `client/core` — reducer, sheets, domain | ~400 | **226** |
-| `client/io/parse.ts` — validation boundary | ~50 | **98** |
-| `client/io/auth.ts` — PKCE | ~100 | **76** |
-| `client/io/server.ts` — fetches, offline queue | — | **147** |
+| `client/io` — boundary, config, PKCE, backend, outbox | ~150 | **320** |
+| `client/ui` — eleven screens and parts of screens | — | **540** |
+| `client/main.ts` + `session.ts` + demo fixture | — | **352** |
 | `client/pdf` — writer and sheet layout | ~250 | **121** |
-| `client/platform` — capability adapters | ~150 | **125** |
-| `client/ui` + `main.ts` + demo fixture | — | **791** |
+| `client/platform` — capability adapters | ~150 | **102** |
 | `client/sw.js` — offline shell | — | **58** |
-| `server` — the whole backend | ~600 | **681** |
-| Tests (client 595, server 507) | — | **1102** |
+| `server` — the whole backend | ~600 | **685** |
+| Tests (client 576, server 509) | — | **1085** |
 
 More test code than application code in the parts where being wrong is silent.
 That is deliberate.
 
-The backend is over its budget. §6 sized it for three jobs — history slices,
-reconciliation, and the ServiceNow commit — and audit administration is a
-fourth that was not in that scope. Worth knowing rather than quietly
-rebaselining: the number that matters is whether `/client/core`, where being
-wrong is silent, is still small. It is.
+Two components are over budget, and both are worth stating rather than quietly
+rebaselining.
+
+**The backend, 685 against ~600.** §6 sized it for three jobs — history slices,
+reconciliation, and the ServiceNow commit. Audit administration is a fourth
+that was not in that scope, and it costs a table, four store methods and their
+half of the contract suite.
+
+**`client/io`, 320 against ~150.** The budget in §21 covers the validation
+boundary; what is here is that plus PKCE, plus the backend client, plus the
+persisted outbox. Measured against the thing the budget names, `parse.ts` is 76
+lines and `config.ts` is 20.
+
+The number that matters is whether `client/core`, where being wrong is silent
+and unrecoverable, is still small. It is, and it has not moved.
 
 ---
 
@@ -372,15 +386,25 @@ tree rots and a reviewer cannot tell whether it matches the source beside it.
 
 ## Layout
 
+Files are named for concepts rather than layers, and each holds one thing where
+that is practical. A screen is a file; the frame two screens share is a file;
+the queue of unsent confirmations is a file.
+
 ```
 client/
-  core/        reducer, sheet planning, domain types — pure, no I/O, no vendor names
-  io/          validation boundary, PKCE, backend client and offline queue
+  core/        walk.ts (the reducer), sheet.ts (Algorithm 2), types.ts
+               pure — no I/O, no DOM, no vendor names
+  io/          parse.ts (validation boundary), config.ts (deployment config),
+               auth.ts (PKCE), server.ts (the backend), outbox.ts (unsent work)
+  ui/          one file per screen — audits, new-audit, shelves, walk, scan,
+               sheets, notice — plus walk-frame.ts, which owns the layout the
+               walk and scan screens share, and dom.ts, the whole toolkit
   pdf/         hand-written PDF writer and QR sheet layout
   platform/    camera and haptics — the only native-aware code
-  ui/          four screens of lists and buttons, no framework
   vendor/      qr-encoder.ts, pinned and hash-documented
   test/        node:test, no framework
+  main.ts      the shell: config, sign-in, routing
+  session.ts   one shelf being walked — the only mutable state in the app
 server/
   adapters/    servicenow (production), sqlstore (dev, test, standalone), csvio
 native/        capacitor shell — committed and near-empty, deliberately

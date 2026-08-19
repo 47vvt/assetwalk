@@ -236,6 +236,11 @@ def test_printed_sheets_are_registered_with_their_counts(store):
     assert len(registered) == 1
     assert registered[0].members == list(SHELF)
     assert len(registered[0].members) == len(SHELF)
+    # Which audit printed a sheet has to survive the round trip. The printed
+    # count is Algorithm 2's integrity check and it is only meaningful against
+    # the walk it was printed for.
+    assert registered[0].walk == WALK
+    assert registered[0].location == BAY
 
 
 def test_a_plaintext_instance_is_refused_rather_than_warned_about():

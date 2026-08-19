@@ -13,7 +13,7 @@
 // @capacitor/browser (ASWebAuthenticationSession / Custom Tabs) — never an
 // embedded webview, which Apple and most identity providers reject outright.
 
-import { parseInstanceURL } from './parse.js';
+import { parseInstanceURL } from './config.js';
 
 export interface OAuth {
   readonly instance: URL;

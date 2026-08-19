@@ -2,7 +2,7 @@
 // be: the app is four screens of lists and buttons, and a hundred packages of
 // reconciliation machinery would be more code to audit than the audit tool.
 
-type Child = Node | string;
+export type Child = Node | string;
 
 export function el(
   tag: string,

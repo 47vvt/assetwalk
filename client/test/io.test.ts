@@ -6,10 +6,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { base64url } from '../io/auth.js';
+import { parseConfig, parseInstanceURL } from '../io/config.js';
 import {
   BoundaryError,
-  parseConfig,
-  parseInstanceURL,
   parseLocations,
   parsePositions,
   parseRoster,
