@@ -40,9 +40,10 @@ Two primitives, and nothing else:
 
 1. **Tap one of the three on screen** → confirm it. Anything stepped over falls
    into the pile.
-2. **Type the tag from the note and press Enter** → a four-step lookup resolves
-   it. There is no second screen and no menu of what the audit already knows:
-   one field, and the algorithm decides.
+2. **Type the tag from the note** → filling the last digit submits it, and a
+   four-step lookup resolves it. There is no second screen and no menu of what
+   the audit already knows: one field, and the algorithm decides. A row short
+   of a digit is not a tag and is not accepted.
 
    The site prefix is a label rather than something to type — it is identical
    on every device in the building — and it is derived from the walk's own tags
@@ -289,8 +290,8 @@ Open `http://localhost:8000`. With no `?walk=` in the URL the client runs
 entirely on a built-in fixture and **makes no network requests at all**. That
 is the demo, and it is what a reviewer should open first.
 
-Tap entries, type a tag that is not on screen and press Enter, finish the
-shelf, download a QR sheet PDF.
+Tap entries, type a tag that is not on screen — it submits itself when the last
+digit lands — finish the shelf, download a QR sheet PDF.
 
 ### Tests
 
@@ -347,7 +348,7 @@ something:
    a few devices, leave others unfound, then **Finish shelf**.
 2. `http://localhost:8000/index.html?walk=walk-demo&location=BAY-B1` — this
    shelf holds `UOM220126`, which the sample data lists on A3. Type it into the
-   field and press Enter to record it here.
+   field to record it here.
 
 Then read the outcome:
 

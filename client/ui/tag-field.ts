@@ -63,6 +63,12 @@ export function tagField(state: State, dispatch: (event: Event) => void): HTMLEl
   };
 
   const send = (): void => {
+    // The row is the validation. A tag shorter than the cells in front of the
+    // auditor is a half-typed one, and `assetTag` alone would wave it through —
+    // its pattern spans every site's tag length, not this walk's. Recording
+    // UOM4206 for UOM420696 would confirm the wrong device silently, and the
+    // shelf is the only place that mistake is ever visible.
+    if (field.value.length !== shape.digits) return;
     const tag = assetTag(shape.prefix + field.value);
     if (tag === null) return;
     field.value = '';
@@ -82,11 +88,6 @@ export function tagField(state: State, dispatch: (event: Event) => void): HTMLEl
     // has no return key to offer instead. A mis-keyed tag is taken back with
     // Undo, the same way a mis-tapped entry is.
     if (cleaned.length === shape.digits) send();
-  });
-  // Hardware keyboards only, and only useful where a site's tags vary in
-  // length so that a short one never fills the row.
-  field.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') send();
   });
   field.addEventListener('focus', () => track.classList.add('active'));
   field.addEventListener('blur', () => track.classList.remove('active'));
